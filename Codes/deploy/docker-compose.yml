@@ -1,0 +1,62 @@
+# Local multi-service stack: PostgreSQL+PostGIS, migrations, API (serving the
+# built React app) and the durable worker, with persistent DB and media volumes.
+#
+#   cp .env.example .env      # fill in keys (DATABASE_URL is overridden below)
+#   docker compose -f deploy/docker-compose.yml up --build
+#   open http://127.0.0.1:8140   (login TestUser / TestUser11 after the seed step)
+name: launchlens
+
+x-app: &app
+  build:
+    context: ..
+    dockerfile: deploy/Dockerfile
+  env_file: ../.env
+  environment:
+    DATABASE_URL: postgresql+asyncpg://launchlens:launchlens@db:5432/launchlens
+    LOCAL_ASSET_DIR: /data/assets
+  volumes:
+    - media:/data/assets
+  depends_on:
+    db:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: launchlens
+      POSTGRES_PASSWORD: launchlens
+      POSTGRES_DB: launchlens
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U launchlens -d launchlens"]
+      interval: 5s
+      retries: 20
+    ports:
+      - "127.0.0.1:5442:5432"
+
+  migrate:
+    <<: *app
+    restart: "no"
+    command: ["sh", "-c", "alembic upgrade head && python -m launchlens.demo.seed"]
+
+  api:
+    <<: *app
+    ports:
+      - "127.0.0.1:8140:8140"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    <<: *app
+    command: ["python", "-m", "launchlens.worker.main"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
+  media:

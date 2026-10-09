@@ -1,0 +1,360 @@
+import { useMemo, useState } from 'react';
+import { motion } from 'framer-motion';
+import { Archive, CheckCircle2, Download, FileArchive, FileText, Film, GitBranch, ImageIcon, Package, PackagePlus, ScrollText, XCircle } from 'lucide-react';
+import { ApiError, downloadUrl } from '../api/client';
+import { mutations, useApiMutation, useAsset, useAssets, useExports, useManifest } from '../api/hooks';
+import type { ApprovalState, Asset } from '../api/types';
+import { PageWrap } from '../components/AppShell';
+import { Drawer, Modal } from '../components/Overlay';
+import { useProjectCtx } from '../components/ProjectContext';
+import { useToast } from '../components/Toast';
+import { Badge, Button, Callout, Card, CardHeader, Checkbox, EmptyState, ErrorState, PageHeader, Skeleton, StatusPill, Table, Td, Th, fadeUp, stagger } from '../components/ui';
+import { VideoPlayer } from '../components/VideoPlayer';
+import { cn, fmtBytes, fmtDate, humanize, shortId, timeAgo } from '../lib/format';
+import { QualityPanel } from './AdStudio';
+
+const KIND_ORDER = ['flyer', 'video_final', 'video_animatic', 'thumbnail', 'background', 'scene_frame', 'video_clip', 'subtitles', 'product_photo', 'logo', 'document', 'export_bundle'];
+const APPROVAL_TONE: Record<string, 'ok' | 'bad' | 'accent' | 'neutral'> = { approved: 'ok', rejected: 'bad', needs_review: 'accent', draft: 'neutral' };
+
+export default function AssetsExports() {
+  const { pid } = useProjectCtx();
+  const [kind, setKind] = useState<string>('flyer,video_final,video_animatic');
+  const [stale, setStale] = useState(true);
+  const all = useAssets(pid);
+  const q = useAssets(pid, kind || undefined);
+  const [open, setOpen] = useState<string | null>(null);
+  const counts = useMemo(() => {
+    const c: Record<string, number> = {};
+    (all.data?.items ?? []).forEach((a) => (c[a.kind] = (c[a.kind] ?? 0) + 1));
+    return c;
+  }, [all.data]);
+  const kinds = [...KIND_ORDER.filter((k) => counts[k]), ...Object.keys(counts).filter((k) => !KIND_ORDER.includes(k))];
+  const items = (q.data?.items ?? []).filter((a) => stale || !a.stale);
+  return (
+    <PageWrap>
+      <PageHeader eyebrow="Deliver" title="Assets & exports" description="Every asset version with lineage, quality findings and approval state — plus campaign packages with a verifiable manifest." />
+      <ExportsSection />
+      <div className="mb-4 mt-8 flex flex-wrap items-center gap-2">
+        <h2 className="mr-2 font-display text-xl font-bold">Gallery</h2>
+        <button type="button" onClick={() => setKind('flyer,video_final,video_animatic')} aria-pressed={kind === 'flyer,video_final,video_animatic'} className={cn('chip', kind === 'flyer,video_final,video_animatic' && 'border-fg/30 text-fg')}>
+          Ads
+        </button>
+        <button type="button" onClick={() => setKind('')} aria-pressed={kind === ''} className={cn('chip', kind === '' && 'border-fg/30 text-fg')}>
+          All · {all.data?.items.length ?? 0}
+        </button>
+        {kinds.map((k) => (
+          <button key={k} type="button" onClick={() => setKind(k)} aria-pressed={kind === k} className={cn('chip', kind === k && 'border-fg/30 text-fg')}>
+            {humanize(k)} · {counts[k]}
+          </button>
+        ))}
+        <span className="ml-auto">
+          <Checkbox checked={stale} onChange={setStale} label="Show stale" />
+        </span>
+      </div>
+      {q.isLoading && (
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          {Array.from({ length: 10 }).map((_, i) => (
+            <Skeleton key={i} className="aspect-[4/5]" />
+          ))}
+        </div>
+      )}
+      {q.error && <ErrorState error={q.error} onRetry={() => q.refetch()} />}
+      {q.data && items.length === 0 && <EmptyState icon={<ImageIcon className="h-5 w-5" />} title="No assets of this kind yet">Generated flyers and videos appear here with their lineage.</EmptyState>}
+      <motion.ul key={kind} variants={stagger(0.03)} initial="hidden" animate="show" className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        {items.map((a) => (
+          <motion.li key={a.id} variants={fadeUp}>
+            <AssetTile a={a} onOpen={() => setOpen(a.id)} />
+          </motion.li>
+        ))}
+      </motion.ul>
+      <AssetDrawer id={open} onClose={() => setOpen(null)} onSwitch={setOpen} />
+    </PageWrap>
+  );
+}
+
+function AssetTile({ a, onOpen }: { a: Asset; onOpen: () => void }) {
+  const isImg = a.mime_type.startsWith('image/');
+  const isVid = a.mime_type.startsWith('video/');
+  return (
+    <button type="button" onClick={onOpen} className="card card-hover group block w-full overflow-hidden text-left">
+      <div className="relative flex aspect-[4/5] items-center justify-center overflow-hidden bg-surface2">
+        {isImg ? (
+          <img src={a.url} alt={a.label || a.kind} loading="lazy" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
+        ) : isVid ? (
+          <>
+            <video src={`${a.url}#t=1`} muted preload="metadata" className="h-full w-full object-cover" aria-hidden />
+            <span className="absolute inset-0 flex items-center justify-center">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/90 shadow-lg">
+                <Film className="h-4 w-4 text-[#0E1320]" />
+              </span>
+            </span>
+          </>
+        ) : a.kind === 'export_bundle' ? (
+          <FileArchive className="h-10 w-10 text-subtle" />
+        ) : (
+          <FileText className="h-10 w-10 text-subtle" />
+        )}
+        <div className="absolute left-2 top-2 flex flex-wrap gap-1">
+          <Badge tone={APPROVAL_TONE[a.approval_state] ?? 'neutral'}>{humanize(a.approval_state)}</Badge>
+          {a.stale && <Badge tone="warn">Stale</Badge>}
+        </div>
+        {a.kind === 'video_animatic' && <Badge tone="warn" className="absolute bottom-2 left-2">Animatic — not xAI</Badge>}
+      </div>
+      <div className="p-3">
+        <p className="truncate text-[13px] font-semibold">{humanize(a.kind)}{a.preset ? ` · ${a.preset}` : ''}</p>
+        <p className="truncate text-[11.5px] text-subtle">
+          v{a.version} · {a.width && a.height ? `${a.width}×${a.height} · ` : ''}
+          {a.duration_s ? `${a.duration_s.toFixed(1)}s · ` : ''}
+          {timeAgo(a.created_at)}
+        </p>
+      </div>
+    </button>
+  );
+}
+
+function AssetDrawer({ id, onClose, onSwitch }: { id: string | null; onClose: () => void; onSwitch: (id: string) => void }) {
+  const { pid } = useProjectCtx();
+  const q = useAsset(id);
+  const toast = useToast();
+  const appr = useApiMutation((s: ApprovalState) => mutations.setApproval(id!, s), [['asset', id], ['assets', pid], ['brief'], ['briefs', pid]]);
+  const a = q.data;
+  const set = (s: ApprovalState) =>
+    appr.mutate(s, {
+      onSuccess: () => toast.success(`Marked ${humanize(s).toLowerCase()}`),
+      onError: (e) =>
+        toast.error(
+          'Approval not changed',
+          e instanceof ApiError && e.code === 'unresolved_quality'
+            ? new Error('This asset has unresolved quality or fidelity findings and must stay a draft. Fix the copy or regenerate, then review again.')
+            : e,
+        ),
+    });
+  const lineage = Object.entries(a?.lineage ?? {});
+  return (
+    <Drawer open={!!id} onClose={onClose} width="max-w-2xl" title={a ? `${humanize(a.kind)}${a.preset ? ` · ${a.preset}` : ''} · v${a.version}` : 'Asset'} subtitle={a?.label}>
+      {q.isLoading && <Skeleton className="aspect-square w-full" />}
+      {q.error && <ErrorState error={q.error} onRetry={() => q.refetch()} />}
+      {a && (
+        <div className="space-y-5">
+          <div className="overflow-hidden rounded-2xl border border-line bg-surface2">
+            {a.mime_type.startsWith('image/') ? (
+              <img src={a.url} alt={a.label || a.kind} className="mx-auto max-h-[520px] w-auto object-contain" />
+            ) : a.mime_type.startsWith('video/') ? (
+              <VideoPlayer asset={a} lang={String(a.metadata?.language ?? '')} />
+            ) : (
+              <div className="flex items-center gap-3 p-6 text-sm text-muted">
+                <FileText className="h-6 w-6" /> {a.mime_type} · {fmtBytes(a.bytes)}
+              </div>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone={APPROVAL_TONE[a.approval_state] ?? 'neutral'}>{humanize(a.approval_state)}</Badge>
+            {a.stale && <Badge tone="warn">Stale: {a.stale_reason}</Badge>}
+            {a.is_original && <Badge tone="accent">Immutable original</Badge>}
+            <div className="ml-auto flex flex-wrap gap-1.5">
+              <Button size="sm" variant="ghost" icon={<CheckCircle2 className="h-3.5 w-3.5 text-ok" />} onClick={() => set('approved')} loading={appr.isPending && appr.variables === 'approved'}>
+                Approve
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => set('needs_review')}>
+                Needs review
+              </Button>
+              <Button size="sm" variant="ghost" icon={<XCircle className="h-3.5 w-3.5 text-bad" />} onClick={() => set('rejected')}>
+                Reject
+              </Button>
+              <a href={downloadUrl(a.id, true)} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-ink px-3 text-xs font-medium text-white dark:bg-white dark:text-[#0E1320]">
+                <Download className="h-3.5 w-3.5" /> Download
+              </a>
+            </div>
+          </div>
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 rounded-2xl border border-line p-4 text-[12.5px]">
+            <dt className="text-subtle">Source</dt>
+            <dd>{a.source}</dd>
+            <dt className="text-subtle">Model</dt>
+            <dd>{a.provider_model || '—'}</dd>
+            <dt className="text-subtle">Remote request</dt>
+            <dd className="truncate font-mono text-[11px]">{a.remote_request_id || '—'}</dd>
+            <dt className="text-subtle">Size</dt>
+            <dd>
+              {fmtBytes(a.bytes)} {a.width ? `· ${a.width}×${a.height}` : ''} {a.duration_s ? `· ${a.duration_s}s` : ''}
+            </dd>
+            <dt className="text-subtle">SHA-256</dt>
+            <dd className="truncate font-mono text-[11px]" title={a.sha256}>{a.sha256}</dd>
+            <dt className="text-subtle">Created</dt>
+            <dd>{fmtDate(a.created_at)}</dd>
+          </dl>
+          {a.quality && a.kind === 'flyer' && <QualityPanel q={a.quality} />}
+          {a.quality && a.kind !== 'flyer' && (
+            <details className="rounded-2xl border border-line p-4 text-xs">
+              <summary className="cursor-pointer text-sm font-semibold">Quality findings</summary>
+              <pre className="scroll-thin mt-2 max-h-60 overflow-auto rounded-lg bg-surface2 p-3 font-mono text-[11px]">{JSON.stringify(a.quality, null, 2)}</pre>
+            </details>
+          )}
+          <div>
+            <p className="eyebrow mb-2 flex items-center gap-1.5">
+              <GitBranch className="h-3.5 w-3.5" /> Lineage
+            </p>
+            <div className="rounded-2xl border border-line p-4">
+              <div className="flex flex-wrap items-center gap-3">
+                {a.parents.map((p) => (
+                  <button key={p.id} onClick={() => onSwitch(p.id)} className="flex items-center gap-2 rounded-xl border border-line bg-surface2 p-2 text-left text-xs hover:border-accent/40">
+                    {p.mime_type.startsWith('image/') ? <img src={p.url} alt="" className="h-10 w-10 rounded-lg object-cover" /> : <Package className="h-5 w-5" />}
+                    <span>
+                      <b className="block">{humanize(p.role.replace(/_asset_id$/, ''))}</b>
+                      <span className="text-subtle">{humanize(p.kind)} v{p.version}</span>
+                    </span>
+                  </button>
+                ))}
+                {a.parents.length > 0 && <span className="text-subtle">→</span>}
+                <span className="rounded-xl border-2 border-brand bg-brand-soft/50 px-3 py-2 text-xs font-semibold">
+                  This {humanize(a.kind).toLowerCase()} v{a.version}
+                </span>
+              </div>
+              {lineage.length > 0 && (
+                <ul className="mt-3 space-y-0.5 font-mono text-[11px] text-muted">
+                  {lineage.map(([k, v]) => (
+                    <li key={k} className="truncate">
+                      {k}: {typeof v === 'object' ? JSON.stringify(v) : String(v)}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+          {a.versions.length > 1 && (
+            <div>
+              <p className="eyebrow mb-2">Version history</p>
+              <ol className="space-y-1.5">
+                {a.versions.map((v) => (
+                  <li key={v.id}>
+                    <button onClick={() => onSwitch(v.id)} className={cn('flex w-full items-center gap-3 rounded-xl border px-3 py-2 text-left text-xs', v.id === a.id ? 'border-brand bg-brand-soft/40' : 'border-line hover:bg-surface2')}>
+                      {v.mime_type.startsWith('image/') && <img src={v.url} alt="" className="h-9 w-9 rounded-md object-cover" />}
+                      <span className="font-semibold">v{v.version}</span>
+                      <Badge tone={APPROVAL_TONE[v.approval_state] ?? 'neutral'}>{humanize(v.approval_state)}</Badge>
+                      {v.stale && <Badge tone="warn">stale</Badge>}
+                      <span className="ml-auto text-subtle">{fmtDate(v.created_at)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+        </div>
+      )}
+    </Drawer>
+  );
+}
+
+function ExportsSection() {
+  const { pid } = useProjectCtx();
+  const q = useExports(pid);
+  const toast = useToast();
+  const [manifest, setManifest] = useState<string | null>(null);
+  const create = useApiMutation(() => mutations.createExport(pid), [['exports', pid], ['jobs', pid]]);
+  return (
+    <Card>
+      <CardHeader
+        icon={<Archive className="h-4 w-4" />}
+        title="Campaign packages"
+        subtitle="Strategy, evidence summary, placement brief and outreach draft (not sent), flyers, videos, copy, storyboard and a manifest with hashes."
+        action={
+          <Button
+            variant="brand"
+            size="sm"
+            icon={<PackagePlus className="h-3.5 w-3.5" />}
+            loading={create.isPending}
+            onClick={() => create.mutate(undefined, { onSuccess: () => toast.success('Export queued', 'The package builds in the background; no generation cost.'), onError: (e) => toast.error('Could not start export', e) })}
+          >
+            Build package
+          </Button>
+        }
+      />
+      <div className="p-4">
+        {q.isLoading && <Skeleton className="h-24 w-full" />}
+        {q.error && <ErrorState error={q.error} onRetry={() => q.refetch()} />}
+        {q.data && q.data.items.length === 0 && <EmptyState title="No packages yet">Build one to download the whole campaign with its evidence.</EmptyState>}
+        {q.data && q.data.items.length > 0 && (
+          <Table caption="Exports">
+            <thead>
+              <tr>
+                <Th>Package</Th>
+                <Th>Status</Th>
+                <Th>Contents</Th>
+                <Th>Created</Th>
+                <Th />
+              </tr>
+            </thead>
+            <tbody>
+              {q.data.items.map((e) => {
+                const iv = (e.included_versions ?? {}) as { briefs?: unknown[]; strategies?: unknown[]; product_version?: number };
+                return (
+                  <tr key={e.id}>
+                    <Td className="font-mono text-xs">{shortId(e.id)}</Td>
+                    <Td><StatusPill status={e.status} /></Td>
+                    <Td className="text-xs text-muted">
+                      {e.files} files · {iv.strategies?.length ?? 0} strategies · {iv.briefs?.length ?? 0} briefs{iv.product_version ? ` · product v${iv.product_version}` : ''}
+                    </Td>
+                    <Td className="text-xs">{fmtDate(e.created_at)}</Td>
+                    <Td className="whitespace-nowrap text-right">
+                      <Button size="sm" variant="ghost" icon={<ScrollText className="h-3.5 w-3.5" />} disabled={e.status !== 'completed'} onClick={() => setManifest(e.id)}>
+                        Manifest
+                      </Button>
+                      {e.download_url && (
+                        <a href={e.download_url} className="ml-1 inline-flex h-8 items-center gap-1.5 rounded-lg bg-ink px-3 text-xs font-medium text-white dark:bg-white dark:text-[#0E1320]">
+                          <Download className="h-3.5 w-3.5" /> ZIP
+                        </a>
+                      )}
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </Table>
+        )}
+      </div>
+      <ManifestModal id={manifest} onClose={() => setManifest(null)} />
+    </Card>
+  );
+}
+
+function ManifestModal({ id, onClose }: { id: string | null; onClose: () => void }) {
+  const q = useManifest(id);
+  const m = q.data as { files?: { path: string; mime: string; bytes: number; sha256: string; [k: string]: unknown }[]; notes?: string[]; created_at?: string; project?: string } | undefined;
+  const [filter, setFilter] = useState('');
+  const files = (m?.files ?? []).filter((f) => f.path.toLowerCase().includes(filter.toLowerCase()));
+  return (
+    <Modal open={!!id} onClose={onClose} size="xl" icon={<ScrollText className="h-4 w-4" />} title="Export manifest" description={m ? `${m.project} · ${fmtDate(m.created_at)} · ${m.files?.length ?? 0} files` : undefined}>
+      {q.isLoading && <Skeleton className="h-64 w-full" />}
+      {q.error && <ErrorState error={q.error} />}
+      {m && (
+        <div className="space-y-4">
+          {m.notes && (
+            <Callout tone="neutral">
+              <ul className="list-disc pl-5 text-xs">{m.notes.map((n) => <li key={n}>{n}</li>)}</ul>
+            </Callout>
+          )}
+          <input className="input" placeholder="Filter files…" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filter manifest files" />
+          <Table caption="Manifest files">
+            <thead>
+              <tr>
+                <Th>Path</Th>
+                <Th>Type</Th>
+                <Th className="text-right">Size</Th>
+                <Th>SHA-256</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {files.map((f) => (
+                <tr key={f.path}>
+                  <Td className="font-mono text-[11.5px]">{f.path}</Td>
+                  <Td className="text-xs">{f.mime}</Td>
+                  <Td className="num text-right text-xs">{fmtBytes(f.bytes)}</Td>
+                  <Td className="max-w-[180px] truncate font-mono text-[10.5px] text-subtle" title={f.sha256}>{f.sha256}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </div>
+      )}
+    </Modal>
+  );
+}

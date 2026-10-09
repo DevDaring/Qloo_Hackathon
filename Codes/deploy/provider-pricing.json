@@ -1,0 +1,148 @@
+{
+  "schema": 1,
+  "notes": "Planning prices only. Actual cost is recorded from the provider's usage field whenever it is returned (xAI reports cost_in_usd_ticks, 1 USD = 10,000,000,000 ticks). Update this file when provider pricing changes; never treat it as permanent truth.",
+  "currency": "USD",
+  "entries": [
+    {
+      "provider": "xai",
+      "model": "grok-imagine-image",
+      "operation": "image",
+      "unit": "image",
+      "usd": 0.02,
+      "source": "https://docs.x.ai/developers/pricing and GET /v1/image-generation-models (image_price=200000000 ticks)",
+      "effective": "2026-10-08"
+    },
+    {
+      "provider": "xai",
+      "model": "grok-imagine-image-2.0",
+      "operation": "image",
+      "unit": "image",
+      "usd": 0.04,
+      "source": "https://docs.x.ai/developers/pricing (low quality, 1k)",
+      "effective": "2026-10-08"
+    },
+    {
+      "provider": "xai",
+      "model": "grok-imagine-image-quality",
+      "operation": "image",
+      "unit": "image",
+      "usd": 0.05,
+      "source": "https://docs.x.ai/developers/pricing",
+      "effective": "2026-10-08"
+    },
+    {
+      "provider": "xai",
+      "model": "grok-imagine-video",
+      "operation": "video",
+      "unit": "second",
+      "usd": 0.05,
+      "source": "https://docs.x.ai/developers/pricing",
+      "effective": "2026-10-08",
+      "reserve_multiplier": 1.5,
+      "observed": "2026-10-08: three 720p grok-imagine-video clips totalling 14 s reported cost_in_usd_ticks = $0.986 (~$0.070/s), above the $0.05/s list price; reservations hold 1.5x."
+    },
+    {
+      "provider": "xai",
+      "model": "grok-imagine-video-1.5",
+      "operation": "video",
+      "unit": "second",
+      "usd": 0.08,
+      "source": "https://docs.x.ai/developers/pricing",
+      "effective": "2026-10-08",
+      "reserve_multiplier": 1.5,
+      "observed": "Not yet observed on this account; 1.5x headroom applied by analogy with grok-imagine-video."
+    },
+    {
+      "provider": "xai",
+      "model": "grok-imagine-video-1.5-lite",
+      "operation": "video",
+      "unit": "second",
+      "usd": 0.02,
+      "source": "https://docs.x.ai/developers/pricing",
+      "effective": "2026-10-08",
+      "reserve_multiplier": 1.5,
+      "observed": "Not yet observed on this account; 1.5x headroom applied by analogy with grok-imagine-video."
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-4.1-mini",
+      "operation": "reasoning",
+      "unit": "1k_input_tokens",
+      "usd": 0.0004,
+      "source": "https://openai.com/api/pricing (gpt-4.1-mini input $0.40/1M)",
+      "effective": "2026-10-08"
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-4.1-mini",
+      "operation": "reasoning",
+      "unit": "1k_output_tokens",
+      "usd": 0.0016,
+      "source": "https://openai.com/api/pricing (gpt-4.1-mini output $1.60/1M)",
+      "effective": "2026-10-08"
+    },
+    {
+      "provider": "fish",
+      "model": "s2.1-pro",
+      "operation": "tts",
+      "unit": "1k_chars",
+      "usd": 0.015,
+      "source": "Fish Audio rate used by the owner's Adotopia deployment (2026-09); verify on fish.audio/pricing",
+      "effective": "2026-09-23"
+    },
+    {
+      "provider": "fal",
+      "model": "fal-ai/elevenlabs/tts/turbo-v2.5",
+      "operation": "tts",
+      "unit": "1k_chars",
+      "usd": 0.05,
+      "source": "fal.ai model page rate used by the owner's Adotopia deployment (2026-09); verify on fal.ai",
+      "effective": "2026-09-23"
+    },
+    {
+      "provider": "qloo",
+      "model": "insights",
+      "operation": "research",
+      "unit": "request",
+      "usd": null,
+      "source": "Hackathon key: quota-limited, no per-request price published",
+      "effective": "2026-10-08"
+    },
+    {
+      "provider": "sarvam",
+      "model": "bulbul:v3",
+      "operation": "tts",
+      "unit": "1k_chars",
+      "usd": 0.034,
+      "source": "https://www.sarvam.ai/api-pricing: INR 3.00 per 1,000 characters (converted at ~INR 88/USD; verify)",
+      "effective": "2026-10-08"
+    },
+    {
+      "provider": "sarvam",
+      "model": "mayura:v1",
+      "operation": "translate",
+      "unit": "1k_chars",
+      "usd": 0.057,
+      "source": "https://www.sarvam.ai/api-pricing: INR 0.005 per character, pay-as-you-go (converted at ~INR 88/USD; verify)",
+      "effective": "2026-10-08"
+    },
+    {
+      "provider": "xai",
+      "model": "grok-4.20-0309-non-reasoning",
+      "operation": "reasoning",
+      "unit": "1k_input_tokens",
+      "usd": 0.00125,
+      "source": "GET /v1/language-models prompt_text_token_price=12500 ticks/token (1 USD = 1e10 ticks)",
+      "effective": "2026-10-09"
+    },
+    {
+      "provider": "xai",
+      "model": "grok-4.20-0309-non-reasoning",
+      "operation": "reasoning",
+      "unit": "1k_output_tokens",
+      "usd": 0.0025,
+      "source": "GET /v1/language-models completion_text_token_price=25000 ticks/token",
+      "effective": "2026-10-09"
+    }
+  ]
+}

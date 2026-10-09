@@ -1,0 +1,136 @@
+import { useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Bot, Send, Sparkles, Wand } from 'lucide-react';
+import { mutations, useApiMutation, useConsultHistory } from '../api/hooks';
+import type { ConsultAnswer } from '../api/types';
+import { humanize } from '../lib/format';
+import { EvidenceChip } from './Evidence';
+import { useProjectCtx } from './ProjectContext';
+import { useToast } from './Toast';
+import { Badge, Button, Card, CardHeader, ErrorState, Textarea } from './ui';
+
+const SUGGESTIONS = ['Why is Chennai excluded?', 'What is still unknown about Kolkata?', 'Which feature should we lead with in New Delhi?'];
+
+export function ConsultPanel() {
+  const { pid, project } = useProjectCtx();
+  const hist = useConsultHistory(pid);
+  const [msg, setMsg] = useState('');
+  const [last, setLast] = useState<ConsultAnswer | null>(null);
+  const toast = useToast();
+  const ask = useApiMutation((m: string) => mutations.consult(pid, m), [['consult', pid]]);
+  const apply = useApiMutation(
+    (p: NonNullable<ConsultAnswer['proposed_revision']>) => {
+      const aud = project?.audiences.find((a) => a.name === p.audience_name);
+      return mutations.applyRevision(pid, {
+        kind: p.kind as 'exclude_region',
+        region_name: p.region_name ?? undefined,
+        ad_spend_budget: p.ad_spend_budget ?? undefined,
+        feature_key: p.feature_key ?? undefined,
+        audience_id: aud?.audience_id,
+        role: (p.role as 'purchaser') ?? undefined,
+        rerun: true,
+      });
+    },
+    [['project', pid], ['runs', pid], ['constraints', pid], ['product', pid], ['audiences', pid]],
+  );
+  const items = (hist.data?.items ?? []).slice(-4);
+
+  const submit = (text: string) => {
+    if (!text.trim()) return;
+    ask.mutate(text.trim(), {
+      onSuccess: (a) => {
+        setLast(a);
+        setMsg('');
+      },
+      onError: (e) => toast.error('Consultation unavailable', e),
+    });
+  };
+
+  return (
+    <Card>
+      <CardHeader icon={<Bot className="h-4 w-4" />} title="Ask LaunchLens" subtitle="Answers only from this project's evidence and assessments; unknowns are stated." />
+      <div className="space-y-3 p-5">
+        {items.length > 0 && !last && (
+          <ul className="max-h-56 space-y-2 overflow-y-auto pr-1 text-[13px]">
+            {items.map((m, i) => (
+              <li key={i} className={m.role === 'user' ? 'ml-6 rounded-xl bg-surface2 px-3 py-2' : 'mr-2 rounded-xl border border-line px-3 py-2'}>
+                <p className="whitespace-pre-line">{m.content}</p>
+                {m.evidence_ids?.length > 0 && <EvidenceChip ids={m.evidence_ids} className="mt-1.5" title="Evidence cited in answer" />}
+              </li>
+            ))}
+          </ul>
+        )}
+        <AnimatePresence>
+          {last && (
+            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-2 rounded-xl border border-line bg-surface2/50 p-3 text-[13.5px]">
+              <p className="whitespace-pre-line leading-relaxed">{last.answer}</p>
+              <div className="flex flex-wrap gap-1.5">
+                {last.evidence.length > 0 && <EvidenceChip ids={last.evidence.map((e) => e.id)} title="Evidence cited in answer" />}
+                {last.dropped_evidence_ids.length > 0 && <Badge tone="warn">{last.dropped_evidence_ids.length} invalid citation(s) removed</Badge>}
+                <Badge>{last.model}</Badge>
+              </div>
+              {last.hypotheses.length > 0 && (
+                <div>
+                  <p className="eyebrow">Hypotheses</p>
+                  <ul className="list-disc pl-5 text-muted">{last.hypotheses.map((h) => <li key={h}>{h}</li>)}</ul>
+                </div>
+              )}
+              {last.unknowns.length > 0 && (
+                <div>
+                  <p className="eyebrow">Unknowns</p>
+                  <ul className="list-disc pl-5 text-muted">{last.unknowns.map((h) => <li key={h}>{h}</li>)}</ul>
+                </div>
+              )}
+              {last.proposed_revision && (
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-brand/30 bg-brand-soft/50 p-2.5">
+                  <Wand className="h-4 w-4 text-brand-ink" />
+                  <span className="min-w-0 flex-1 text-[13px]">
+                    Proposed revision: <b>{humanize(last.proposed_revision.kind)}</b>{' '}
+                    {last.proposed_revision.region_name ?? last.proposed_revision.feature_key ?? last.proposed_revision.ad_spend_budget ?? last.proposed_revision.role ?? ''}
+                    <span className="block text-xs text-muted">{last.proposed_revision.rationale} — not applied until you confirm.</span>
+                  </span>
+                  <Button
+                    size="sm"
+                    loading={apply.isPending}
+                    onClick={() =>
+                      apply.mutate(last.proposed_revision!, {
+                        onSuccess: () => toast.success('Revision applied as a new version', 'A new research run started; earlier results are preserved.'),
+                        onError: (e) => toast.error('Could not apply revision', e),
+                      })
+                    }
+                  >
+                    Apply &amp; re-run
+                  </Button>
+                </div>
+              )}
+              <button className="text-xs font-medium text-muted hover:text-fg" onClick={() => setLast(null)}>
+                Show conversation
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        {ask.error && <ErrorState error={ask.error} compact />}
+        <div className="flex flex-wrap gap-1.5">
+          {SUGGESTIONS.map((s) => (
+            <button key={s} type="button" onClick={() => submit(s)} disabled={ask.isPending} className="chip transition hover:border-accent/40 hover:text-fg">
+              <Sparkles className="h-3 w-3" /> {s}
+            </button>
+          ))}
+        </div>
+        <form
+          className="flex items-end gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit(msg);
+          }}
+        >
+          <label htmlFor="consult" className="sr-only">
+            Question
+          </label>
+          <Textarea id="consult" value={msg} onChange={(e) => setMsg(e.target.value)} rows={2} className="min-h-[44px]" placeholder="Ask about locations, evidence or trade-offs…" />
+          <Button type="submit" loading={ask.isPending} aria-label="Ask" icon={<Send className="h-4 w-4" />} />
+        </form>
+      </div>
+    </Card>
+  );
+}

@@ -1,0 +1,98 @@
+"""Loads a project's current versions as plain dicts for the workflow, so no
+ORM object outlives its session and no transaction spans a provider call."""
+from __future__ import annotations
+
+import uuid
+
+from sqlalchemy import select
+
+from ..db import session_scope
+from ..models import (
+    Audience, AudienceVersion, Claim, ConstraintVersion, ProductAsset, ProductVersion, Project, ResolvedEntity,
+)
+from . import hashing
+
+
+def product_dict(pv: ProductVersion) -> dict:
+    return {
+        "id": str(pv.id), "version": pv.version, "name": pv.name, "description": pv.description,
+        "category": pv.category, "price": float(pv.price) if pv.price is not None else None, "currency": pv.currency,
+        "intended_benefits": pv.intended_benefits, "operating_limitations": pv.operating_limitations,
+        "launch_date": pv.launch_date.isoformat() if pv.launch_date else None,
+        "distribution_options": pv.distribution_options, "available_stock": pv.available_stock,
+        "brand_colours": pv.brand_colours, "brand_voice": pv.brand_voice, "website": pv.website,
+        "cta_destination": pv.cta_destination, "open_questions": pv.open_questions, "is_synthetic": pv.is_synthetic,
+        "features": [{"key": f.key, "name": f.name, "mechanism": f.mechanism, "proposed_benefit": f.proposed_benefit,
+                      "operating_conditions": f.operating_conditions, "evidence_status": f.evidence_status,
+                      "source": f.source, "prohibited_exaggerations": f.prohibited_exaggerations,
+                      "critical_unknowns": f.critical_unknowns, "enabled": f.enabled} for f in pv.features],
+        "hash": hashing.product_hash(pv),
+    }
+
+
+def audience_dict(av: AudienceVersion) -> dict:
+    return {"id": str(av.id), "audience_id": str(av.audience_id), "version": av.version, "name": av.name,
+            "role": av.role, "description": av.description, "needs": av.needs,
+            "voluntary_interests": av.voluntary_interests, "languages": av.languages,
+            "research_notes": av.research_notes, "is_hypothetical_persona": av.is_hypothetical_persona,
+            "hash": hashing.audience_hash(av)}
+
+
+def constraint_dict(cv: ConstraintVersion) -> dict:
+    return {"id": str(cv.id), "version": cv.version, "country_code": cv.country_code,
+            "candidate_regions": cv.candidate_regions, "service_regions": cv.service_regions,
+            "excluded_regions": cv.excluded_regions,
+            "production_budget": float(cv.production_budget) if cv.production_budget is not None else None,
+            "ad_spend_budget": float(cv.ad_spend_budget) if cv.ad_spend_budget is not None else None,
+            "currency": cv.currency,
+            "min_ad_spend_per_location": float(cv.min_ad_spend_per_location) if cv.min_ad_spend_per_location is not None else None,
+            "distribution_requirements": cv.distribution_requirements, "weights": cv.weights,
+            "hash": hashing.constraint_hash(cv)}
+
+
+async def latest_product(s, project_id: uuid.UUID) -> ProductVersion | None:
+    return (await s.execute(select(ProductVersion).where(ProductVersion.project_id == project_id)
+                            .order_by(ProductVersion.version.desc()).limit(1))).scalar_one_or_none()
+
+
+async def latest_constraints(s, project_id: uuid.UUID) -> ConstraintVersion | None:
+    return (await s.execute(select(ConstraintVersion).where(ConstraintVersion.project_id == project_id)
+                            .order_by(ConstraintVersion.version.desc()).limit(1))).scalar_one_or_none()
+
+
+async def latest_audiences(s, project_id: uuid.UUID) -> list[AudienceVersion]:
+    auds = (await s.execute(select(Audience).where(Audience.project_id == project_id, Audience.archived.is_(False))
+                            .order_by(Audience.created_at))).scalars().all()
+    out = []
+    for a in auds:
+        av = (await s.execute(select(AudienceVersion).where(AudienceVersion.audience_id == a.id)
+                              .order_by(AudienceVersion.version.desc()).limit(1))).scalar_one_or_none()
+        if av:
+            out.append(av)
+    return out
+
+
+async def load(project_id: uuid.UUID) -> dict:
+    async with session_scope() as s:
+        project = await s.get(Project, project_id)
+        pv = await latest_product(s, project_id)
+        cv = await latest_constraints(s, project_id)
+        avs = await latest_audiences(s, project_id)
+        claims = (await s.execute(select(Claim).where(Claim.project_id == project_id,
+                                                      Claim.product_version_id == (pv.id if pv else None)))).scalars().all()
+        ents = (await s.execute(select(ResolvedEntity).where(ResolvedEntity.project_id == project_id))).scalars().all()
+        passets = (await s.execute(select(ProductAsset).where(ProductAsset.project_id == project_id))).scalars().all()
+        return {
+            "project": {"id": str(project.id), "workspace_id": str(project.workspace_id), "name": project.name,
+                        "country_code": project.country_code, "currency": project.currency, "is_demo": project.is_demo},
+            "product": product_dict(pv) if pv else None,
+            "constraints": constraint_dict(cv) if cv else None,
+            "audiences": [audience_dict(a) for a in avs],
+            "claims": [{"id": str(c.id), "text": c.text, "feature_key": c.feature_key, "support_status": c.support_status,
+                        "approved": c.approved} for c in claims],
+            "entities": [{"id": str(e.id), "audience_version_id": str(e.audience_version_id) if e.audience_version_id else None,
+                          "query_text": e.query_text, "status": e.status, "qloo_id": e.qloo_id, "qloo_type": e.qloo_type,
+                          "canonical_name": e.canonical_name, "candidates": e.candidates, "proxy_for": e.proxy_for,
+                          "tags": e.tags} for e in ents],
+            "product_assets": [{"asset_id": str(a.asset_id), "role": a.role, "is_primary": a.is_primary} for a in passets],
+        }

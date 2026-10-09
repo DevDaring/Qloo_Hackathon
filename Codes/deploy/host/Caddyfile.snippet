@@ -1,0 +1,47 @@
+# >>> launchlens
+# LaunchLens (Qloo LLM hackathon) - https://launchlens.koushikdeb.com -> FastAPI (API + React dist) on 127.0.0.1:8140
+# DNS: NameSilo A record "launchlens" -> 154.12.116.152. TLS via Caddy ACME HTTP-01.
+launchlens.koushikdeb.com {
+	encode zstd gzip
+
+	log {
+		output file /var/log/caddy/launchlens.log {
+			roll_size 50MiB
+			roll_keep 5
+			roll_keep_for 2160h
+		}
+		format json
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+		Cross-Origin-Opener-Policy "same-origin"
+		-Server
+	}
+
+	# Vite fingerprints bundles; index.html must always revalidate.
+	@immutable path /assets/*
+	header @immutable Cache-Control "public, max-age=31536000, immutable"
+
+	# Uploads are capped at MAX_UPLOAD_MB=25 by the app; headroom for multipart overhead.
+	request_body {
+		max_size 30MB
+	}
+
+	reverse_proxy 127.0.0.1:8140 {
+		# The login limiter keys on X-Real-IP; overwrite it with the real TCP peer.
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		# Server-sent events (run progress) must stream without buffering.
+		flush_interval -1
+		transport http {
+			read_timeout 3600s
+			write_timeout 3600s
+		}
+	}
+}
+# <<< launchlens

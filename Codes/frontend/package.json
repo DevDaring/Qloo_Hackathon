@@ -1,0 +1,37 @@
+{
+  "name": "launchlens-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "preview": "vite preview",
+    "lint": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
+    "gen:api": "curl -sf http://127.0.0.1:8140/api/v1/openapi.json -o ../contracts/openapi.json && npx --yes openapi-typescript@7 ../contracts/openapi.json -o src/api/schema.d.ts",
+    "test:e2e": "playwright test --project=chromium",
+    "shots": "SHOTS_DIR=${SHOTS_DIR:-test-results/ui-shots} playwright test --project=shots"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "5.104.1",
+    "framer-motion": "11.18.2",
+    "lucide-react": "0.468.0",
+    "maplibre-gl": "5.24.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-router-dom": "6.28.2",
+    "recharts": "2.13.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.0",
+    "@types/node": "20.19.43",
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7",
+    "@vitejs/plugin-react": "4.7.0",
+    "autoprefixer": "10.6.1",
+    "postcss": "8.5.29",
+    "tailwindcss": "3.4.19",
+    "typescript": "5.6.3",
+    "vite": "5.4.21"
+  }
+}

@@ -1,0 +1,26 @@
+# Top-level dependencies (pinned resolution in requirements.lock)
+fastapi==0.142.4
+uvicorn[standard]==0.54.0
+SQLAlchemy[asyncio]==2.1.4
+asyncpg==0.32.0
+alembic==1.20.0
+GeoAlchemy2==0.20.0
+shapely==2.2.0
+pydantic==2.13.5
+pydantic-settings==2.15.0
+httpx==0.28.1
+langgraph==1.2.14
+langgraph-checkpoint-postgres==3.1.2
+psycopg[binary,pool]==3.3.6
+pillow==12.3.0
+numpy==2.5.3
+python-multipart==0.0.32
+PyJWT==2.15.1
+bcrypt==5.0.0
+sse-starlette==3.5.0
+pypdf==6.19.0
+# optional: STORAGE_BACKEND=s3
+# boto3
+# tests
+pytest==9.1.1
+pytest-asyncio==1.4.0
