@@ -22,6 +22,7 @@ from ..models import (
 )
 from ..providers import geo, qloo
 from ..providers.base import ProviderError
+from . import context as ctxsvc
 from . import evidence as ev
 from . import scoring
 
@@ -286,8 +287,146 @@ QLOO_PARTNER_TAGS: dict[str, tuple[str, str]] = {
     "urn:tag:category:place:mobility_equipment_supplier": ("mobility_store", "competitor"),
     "urn:tag:category:place:electronics_store": ("electronics_store", "partner"),
 }
+LIFT_MIN_BASELINE = 5      # baseline results an area needs before its taste share means anything
+COMMON_PAGES, COMMON_TAKE = 3, 50
+
+
+def _wkt_union(areas: list[dict]) -> tuple[str, dict]:
+    from shapely.geometry import MultiPolygon
+    polys = {a["area_id"]: _circle(a["lat"], a["lon"], float(a["radius_m"])) for a in areas}
+    return MultiPolygon(list(polys.values())).wkt, polys
+
+
+def _assign(results: list[dict], polys: dict) -> tuple[dict, int]:
+    counts = {k: 0 for k in polys}
+    outside = 0
+    for r in results:
+        if r.get("lat") is None or r.get("lon") is None:
+            continue
+        hit = next((k for k, p in polys.items() if p.contains(Point(r["lon"], r["lat"]))), None)
+        if hit:
+            counts[hit] += 1
+        else:
+            outside += 1
+    return counts, outside
+
+
+async def common_taste(run_id: uuid.UUID, project_id: uuid.UUID, areas: list[dict], audiences: list[dict],
+                       entities: list[dict], budget: qloo.CallBudget, qloo_enabled: bool) -> dict:
+    """Comparable cultural evidence across candidate areas.
+
+    Per-city affinity means come from different query contexts and are not
+    directly comparable. Instead, ONE query covers all candidate areas
+    (MULTIPOLYGON): with an audience's taste signals it returns places ranked by
+    affinity; without signals (baseline) it returns Qloo's general results for
+    the same areas. An area's taste LIFT is its share of taste-matched results
+    divided by its share of baseline results (Laplace-smoothed). Lift is
+    unitless, so audiences can be combined (mean log2 lift). Areas with fewer
+    than LIFT_MIN_BASELINE baseline results are 'sparse' and get no score; with
+    fewer than two scorable areas there is nothing to compare, so the cultural
+    component stays missing. Results are truncated ranked sets, not a census."""
+    from math import log2
+    good = [a for a in areas if not a.get("error")]
+    out = {a["area_id"]: {"cultural_fit": None, "state": "missing", "by_audience": {}} for a in good}
+    if not qloo_enabled:
+        for v in out.values():
+            v.update(state="disabled_by_experiment", reason="Qloo signals withheld by the experiment condition")
+        return out
+    if not qloo.configured():
+        for v in out.values():
+            v.update(state="missing", reason="Qloo is not configured")
+        return out
+    wkt, polys = _wkt_union(good)
+    try:
+        base, bmeta = await qloo.common_places(wkt, entity_ids=[], tag_ids=[], pages=COMMON_PAGES, take=COMMON_TAKE,
+                                               budget=budget, context={"run_areas": sorted(polys)})
+    except ProviderError as e:
+        for v in out.values():
+            v.update(state="unsupported" if e.kind == "unsupported" else "error", reason=e.message)
+        return out
+    bcounts, boutside = _assign(base, polys)
+    btotal = sum(bcounts.values())
+    names = {a["area_id"]: a["name"] for a in good}
+    records = []
+    for aud in audiences:
+        ents, tags = ctxsvc.signals_from(entities, aud["id"])
+        if not ents and not tags:
+            for v in out.values():
+                v["by_audience"][aud["id"]] = {"state": "no_signals"}
+            continue
+        try:
+            res, smeta = await qloo.common_places(wkt, entity_ids=ents, tag_ids=tags, pages=COMMON_PAGES,
+                                                  take=COMMON_TAKE, budget=budget,
+                                                  context={"run_areas": sorted(polys), "audience_hash": aud["hash"]})
+        except ProviderError as e:
+            for v in out.values():
+                v["by_audience"][aud["id"]] = {"state": "unsupported" if e.kind == "unsupported" else "error",
+                                              "message": e.message}
+            continue
+        scounts, soutside = _assign(res, polys)
+        stotal = sum(scounts.values())
+        k = len(polys)
+        rows = {}
+        for aid in polys:
+            nb, ns = bcounts[aid], scounts[aid]
+            share_b = (nb + 0.5) / (btotal + 0.5 * k) if btotal else None
+            share_s = (ns + 0.5) / (stotal + 0.5 * k) if stotal else None
+            if not stotal:
+                st, lift = "empty", None
+            elif nb < LIFT_MIN_BASELINE:
+                st, lift = "sparse", None
+            else:
+                st, lift = "available", round(share_s / share_b, 4)
+            rows[aid] = {"state": st, "lift": lift, "log2_lift": round(log2(lift), 4) if lift else None,
+                         "n_signal": ns, "n_baseline": nb, "share_signal": round(share_s, 4) if share_s else None,
+                         "share_baseline": round(share_b, 4) if share_b else None}
+        e = ev.new(project_id, kind="derived_metric", topic="taste_common", run_id=run_id,
+                   audience_version_id=uuid.UUID(aud["id"]),
+                   title=f"Qloo taste lift across candidate areas for {aud['name']}",
+                   statement="; ".join(f"{names[aid]}: {r['n_signal']} of {stotal} taste-matched vs {r['n_baseline']} of "
+                                       f"{btotal} baseline results -> " +
+                                       (f"lift {r['lift']:.2f}x" if r["lift"] else r["state"]) for aid, r in rows.items()),
+                   source="LaunchLens derived from Qloo Insights (one common query context)",
+                   source_ref=f"{settings.QLOO_BASE_URL}/v2/insights filter.location=MULTIPOLYGON of candidate areas",
+                   formula=("lift(area) = ((n_signal+0.5)/(N_signal+0.5k)) / ((n_baseline+0.5)/(N_baseline+0.5k)); "
+                            f"N = results inside candidate areas from {COMMON_PAGES}x{COMMON_TAKE} ranked results; "
+                            f"sparse if n_baseline < {LIFT_MIN_BASELINE}"),
+                   retrieved_at=smeta.get("retrieved_at"),
+                   scope={"areas": names, "signal_entities": ents, "signal_tags": tags, "pages": COMMON_PAGES,
+                          "take": COMMON_TAKE, "query_hashes": smeta["query_hashes"],
+                          "baseline_query_hashes": bmeta["query_hashes"], "truncated": smeta["truncated"],
+                          "outside_areas": {"signal": soutside, "baseline": boutside}},
+                   limitations=("A share of a truncated, ranked result set, compared with Qloo's own no-taste results "
+                                "for the same areas. It shows where these tastes concentrate relative to Qloo's coverage; "
+                                "it is not demand, market size or purchase likelihood."),
+                   payload={"rows": rows, "n_signal_total": stotal, "n_baseline_total": btotal})
+        records.append(e)
+        for aid, r in rows.items():
+            out[aid]["by_audience"][aud["id"]] = {**r, "evidence_id": str(e.id)}
+    async with session_scope() as s:
+        for r in records:
+            s.add(r)
+    scorable = {aid for aid, v in out.items()
+                if any(x.get("state") == "available" for x in v["by_audience"].values())}
+    for aid, v in out.items():
+        lifts = [x["log2_lift"] for x in v["by_audience"].values() if x.get("state") == "available"]
+        if len(scorable) < 2:
+            v.update(state="not_comparable", reason="Fewer than two candidate areas have enough Qloo coverage to compare")
+        elif lifts:
+            v.update(cultural_fit=round(sum(lifts) / len(lifts), 4), state="available",
+                     reason="mean log2 taste lift across audiences with signals")
+        else:
+            states = {x.get("state") for x in v["by_audience"].values()}
+            v.update(state="sparse" if "sparse" in states else ("empty" if "empty" in states else "missing"),
+                     reason="Qloo coverage here is too thin to score" if "sparse" in states else
+                     "No usable taste results for this area")
+    return out
+
+
 async def taste_analysis(run_id: uuid.UUID, project_id: uuid.UUID, area: dict, audiences: list[dict],
-                         budget: qloo.CallBudget, qloo_enabled: bool) -> dict:
+                         budget: qloo.CallBudget, qloo_enabled: bool, entities: list[dict] | None = None) -> dict:
+    """Venue-level Qloo recommendations WITHIN one area (explanations included).
+    These rank places inside the city; they are not used to compare cities."""
     aid = uuid.UUID(area["area_id"])
     if not qloo_enabled:
         async with session_scope() as s:
@@ -295,19 +434,22 @@ async def taste_analysis(run_id: uuid.UUID, project_id: uuid.UUID, area: dict, a
                          title="Qloo signals disabled for this comparison run",
                          statement="Experiment condition: taste signals withheld; practical evidence is identical.",
                          source="LaunchLens experiment", status="unknown"))
-        return {"area_id": area["area_id"], "cultural_fit": None, "state": "disabled_by_experiment"}
+        return {"area_id": area["area_id"], "state": "disabled_by_experiment", "by_audience": {}}
     if not qloo.configured():
         async with session_scope() as s:
             s.add(ev.new(project_id, kind="data_gap", topic="taste", run_id=run_id, area_id=aid,
                          title=f"Qloo taste signals unavailable for {area['name']}",
-                         statement="QLOO_API_KEY is not configured, so cultural fit is missing and the ranking is incomplete.",
+                         statement="Qloo is not configured, so cultural evidence is missing and the ranking is incomplete.",
                          source="qloo"))
-        return {"area_id": area["area_id"], "cultural_fit": None, "state": "missing"}
+        return {"area_id": area["area_id"], "state": "missing", "by_audience": {}}
     by_aud: dict[str, dict] = {}
     records = []
     qloo_places: dict[str, dict] = {}
     for a in audiences:
-        ents, tags = await signals_for(project_id, a["id"])
+        if entities is not None:
+            ents, tags = ctxsvc.signals_from(entities, a["id"])
+        else:
+            ents, tags = await signals_for(project_id, a["id"])
         if not ents and not tags:
             by_aud[a["id"]] = {"state": "no_signals"}
             continue
@@ -316,32 +458,38 @@ async def taste_analysis(run_id: uuid.UUID, project_id: uuid.UUID, area: dict, a
                                                    tag_ids=tags, take=20, budget=budget,
                                                    context={"audience_hash": a["hash"], "area": area["area_id"]})
         except ProviderError as e:
-            by_aud[a["id"]] = {"state": "error", "message": e.message}
+            by_aud[a["id"]] = {"state": "unsupported" if e.kind == "unsupported" else "error", "message": e.message}
             records.append(ev.new(project_id, kind="data_gap", topic="taste", run_id=run_id, area_id=aid,
                                   audience_version_id=uuid.UUID(a["id"]), title=f"Qloo query failed for {a['name']}",
                                   statement=e.message, source="qloo"))
             continue
-        affs = [r["affinity"] for r in results if isinstance(r.get("affinity"), (int, float))]
-        top = sorted(results, key=lambda r: -(r.get("affinity") or 0))[:10]
-        mean_aff = round(sum(affs[:10]) / len(affs[:10]), 4) if affs else None
+        # One explicitly sorted list of finite affinities drives BOTH the summary and the displayed places.
+        scored = sorted([r for r in results if r.get("affinity") is not None], key=lambda r: -r["affinity"])
+        top = scored[:10]
+        mean_aff = round(sum(r["affinity"] for r in top) / len(top), 4) if top else None
+        state = "available" if top else ("empty" if meta.get("empty") or not results else "no_metric")
         e = ev.new(project_id, kind="provider_signal", topic="taste", run_id=run_id, area_id=aid,
                    audience_version_id=uuid.UUID(a["id"]),
-                   title=f"Qloo: places near {area['name']} with affinity to {a['name']}'s interests",
-                   statement=("Top places by Qloo affinity: " + ", ".join(f"{r['name']} ({r['affinity']:.2f})" if r.get("affinity") is not None else r["name"] for r in top[:6])
-                              if top else "Qloo returned no places for these signals here."),
+                   title=f"Qloo: places in {area['name']} recommended for {a['name']}'s interests",
+                   statement=("Top places by Qloo affinity: " + ", ".join(f"{r['name']} ({r['affinity']:.2f})" for r in top[:6])
+                              if top else (meta.get("empty_note") or "No usable affinity values returned.")),
                    source="Qloo Insights API", source_ref=f"{settings.QLOO_BASE_URL}/v2/insights (filter.type=urn:entity:place)",
-                   value=mean_aff, units="mean Qloo affinity (top 10, this query context)", retrieved_at=meta["retrieved_at"],
-                   scope={"radius_m": int(area["radius_m"]), "signal_entities": ents, "signal_tags": tags,
-                          "take": 20, "query_hash": meta["query_hash"]},
-                   limitations=("Qloo affinity is a relative taste relationship within this query context. It is not "
-                                "demand, footfall, purchase probability or willingness to partner, and it says nothing "
-                                "about disability or wheelchair use."),
-                   payload={"top": [{k: r.get(k) for k in ("qloo_id", "name", "affinity", "popularity", "lat", "lon", "address", "tags")}
-                                    for r in top]}, redistributable=False)
+                   value=mean_aff, units=f"mean Qloo affinity of the {len(top)} shown places (this query only)",
+                   retrieved_at=meta["retrieved_at"], status="supported" if top else "unknown",
+                   scope={"radius_m": int(area["radius_m"]), "signal_entities": ents, "signal_tags": tags, "take": 20,
+                          "returned": len(results), "with_affinity": len(scored), "query_hash": meta["query_hash"],
+                          "explainability_warning": meta.get("explainability_warning")},
+                   limitations=("Within-city venue ranking only: affinity is relative to this query's results and is not "
+                                "compared across cities. Not demand, footfall, purchase probability or willingness to "
+                                "partner, and says nothing about disability or wheelchair use."),
+                   payload={"top": [{k: r.get(k) for k in ("qloo_id", "name", "affinity", "popularity", "lat", "lon",
+                                                         "address", "tags", "explanation")} for r in top]},
+                   redistributable=False)
         records.append(e)
-        by_aud[a["id"]] = {"state": "available", "mean_affinity": mean_aff, "evidence_id": str(e.id),
-                           "places": [{k: r.get(k) for k in ("qloo_id", "name", "affinity", "lat", "lon")} for r in top]}
-        # Partner-type places from Qloo itself (category tags), ranked by affinity to this audience.
+        by_aud[a["id"]] = {"state": state, "mean_affinity_shown": mean_aff, "n_shown": len(top),
+                           "n_returned": len(results), "evidence_id": str(e.id),
+                           "places": [{k: r.get(k) for k in ("qloo_id", "name", "affinity", "lat", "lon", "explanation")}
+                                      for r in top]}
         try:
             partners, pmeta = await qloo.places_near(area["lat"], area["lon"], int(area["radius_m"]), entity_ids=ents,
                                                      tag_ids=tags, filter_tags=list(QLOO_PARTNER_TAGS), take=40,
@@ -352,22 +500,26 @@ async def taste_analysis(run_id: uuid.UUID, project_id: uuid.UUID, area: dict, a
         kept = 0
         for r in partners:
             cat = next((QLOO_PARTNER_TAGS[t["id"]] for t in (r.get("tags") or []) if t.get("id") in QLOO_PARTNER_TAGS), None)
-            if not cat or r.get("lat") is None or not r.get("qloo_id"):
+            if not cat or r.get("lat") is None or r.get("lon") is None or not r.get("qloo_id"):
                 continue
-            entry = qloo_places.setdefault(r["qloo_id"], {**r, "category": cat[0], "role": cat[1], "affinity_by_audience": {}})
+            entry = qloo_places.setdefault(r["qloo_id"], {**r, "category": cat[0], "role": cat[1],
+                                                          "affinity_by_audience": {}, "explanation_by_audience": {}})
             entry["affinity_by_audience"][a["id"]] = r.get("affinity")
+            entry["explanation_by_audience"][a["id"]] = r.get("explanation")
             kept += 1
         if partners or pmeta.get("empty"):
+            ranked = sorted([q for q in partners if q.get("affinity") is not None], key=lambda q: -q["affinity"])
             records.append(ev.new(project_id, kind="provider_signal", topic="taste_partners", run_id=run_id, area_id=aid,
                                   audience_version_id=uuid.UUID(a["id"]),
-                                  title=f"Qloo: {kept} partner-type places near {area['name']} ranked for {a['name']}",
+                                  title=f"Qloo: {kept} partner-type places in {area['name']} ranked for {a['name']}",
                                   statement=("Pharmacies, hospitals, malls, community/senior centres, physiotherapists and "
                                              "mobility/medical suppliers returned by Qloo for these taste signals: "
-                                             + ", ".join(f"{q['name']} ({q['affinity']:.2f})" for q in partners[:6]
-                                                         if q.get("affinity") is not None)) if partners else pmeta.get("empty_note", ""),
+                                             + ", ".join(f"{q['name']} ({q['affinity']:.2f})" for q in ranked[:6]))
+                                  if partners else pmeta.get("empty_note", ""),
                                   source="Qloo Insights API", source_ref=f"{settings.QLOO_BASE_URL}/v2/insights (filter.tags=place categories)",
                                   value=kept, units="places (retrieved set)", retrieved_at=pmeta.get("retrieved_at"),
-                                  scope={"radius_m": int(area["radius_m"]), "filter_tags": list(QLOO_PARTNER_TAGS), "take": 40},
+                                  scope={"radius_m": int(area["radius_m"]), "filter_tags": list(QLOO_PARTNER_TAGS), "take": 40,
+                                         "query_hash": pmeta.get("query_hash")},
                                   limitations="Affinity ranks taste relevance only; it does not establish willingness to "
                                               "collaborate, footfall or ad availability. Retrieved set, not a census.",
                                   redistributable=False))
@@ -385,16 +537,17 @@ async def taste_analysis(run_id: uuid.UUID, project_id: uuid.UUID, area: dict, a
                         distance_m=Decimal(str(round(geo.haversine_m(area["lat"], area["lon"], q["lat"], q["lon"]), 1))),
                         accessibility="unknown", qloo_entity_id=q["qloo_id"], retrieved_at=now,
                         metadata_={"qloo_affinity_by_audience": q["affinity_by_audience"],
+                                   "qloo_explanation_by_audience": q["explanation_by_audience"],
                                    "qloo_popularity": q.get("popularity"), "business_rating": q.get("business_rating"),
                                    "source_note": "Qloo place entity (category tag match)"}))
-    vals = [v["mean_affinity"] for v in by_aud.values() if v.get("mean_affinity") is not None]
-    return {"area_id": area["area_id"], "cultural_fit": round(sum(vals) / len(vals), 4) if vals else None,
-            "state": "available" if vals else "missing", "by_audience": by_aud}
+    states = {v.get("state") for v in by_aud.values()}
+    return {"area_id": area["area_id"], "state": "available" if "available" in states else
+            (sorted(states)[0] if states else "missing"), "by_audience": by_aud}
 
 
 # ---------------------------------------------------------------- evaluation -
 async def evaluate(run_id: uuid.UUID, project_id: uuid.UUID, areas: list[dict], constraints: dict,
-                   taste: dict[str, dict], qloo_enabled: bool) -> list[dict]:
+                   taste: dict[str, dict], qloo_enabled: bool, common: dict | None = None) -> list[dict]:
     from geoalchemy2.shape import to_shape
     async with session_scope() as s:
         evs = (await s.execute(select(EvidenceRecord).where(EvidenceRecord.run_id == run_id))).scalars().all()
@@ -479,13 +632,17 @@ async def evaluate(run_id: uuid.UUID, project_id: uuid.UUID, areas: list[dict], 
             c.topics_present.add("climate")
             c.raw["feature_relevance"] = float(e_clim.value_numeric)
             c.raw_meta["feature_relevance"] = {"units": "hot days/year (hypothesis input)", "evidence_ids": [str(e_clim.id)]}
-        t = taste.get(aid) or {}
-        if t.get("cultural_fit") is not None:
+        cm = (common or {}).get(aid) or {}
+        by_a = cm.get("by_audience") or {}
+        c.raw_meta["cultural_fit"] = {
+            "units": "mean log2 taste lift (one common Qloo query across candidate areas)",
+            "method": "share of taste-matched results / share of no-taste baseline results, same query context",
+            "evidence_ids": sorted({v["evidence_id"] for v in by_a.values() if v.get("evidence_id")}),
+            "by_audience": {k: {kk: v.get(kk) for kk in ("state", "lift", "n_signal", "n_baseline")} for k, v in by_a.items()},
+            "cultural_state": cm.get("state", "missing"), "missing_reason": cm.get("reason")}
+        if cm.get("cultural_fit") is not None:
             c.topics_present.add("taste")
-            c.raw["cultural_fit"] = t["cultural_fit"]
-            c.raw_meta["cultural_fit"] = {"units": "mean Qloo affinity (provider value)",
-                                          "evidence_ids": [v["evidence_id"] for v in (t.get("by_audience") or {}).values() if v.get("evidence_id")],
-                                          "by_audience": {k: v.get("mean_affinity") for k, v in (t.get("by_audience") or {}).items()}}
+            c.raw["cultural_fit"] = cm["cultural_fit"]
         candidates.append(c)
     weights = {**scoring.DEFAULT_WEIGHTS, **(constraints.get("weights") or {})}
     results = scoring.score(candidates, weights, qloo_enabled=qloo_enabled)
@@ -584,7 +741,8 @@ async def placement_research(run_id: uuid.UUID, project_id: uuid.UUID, area: dic
                 q = qindex.get(_name_key(p.name))
                 aff = ((p.metadata_ or {}).get("qloo_affinity_by_audience") or {}).get(a["id"]) if p.provider == "qloo" else None
                 if aff is not None:
-                    q = {"affinity": aff, "qloo_id": p.qloo_entity_id, "name": p.name}
+                    q = {"affinity": aff, "qloo_id": p.qloo_entity_id, "name": p.name,
+                         "explanation": ((p.metadata_ or {}).get("qloo_explanation_by_audience") or {}).get(a["id"])}
                 parts = {"category_fit": f, "proximity": round(prox, 3)}
                 if q and q.get("affinity") is not None:
                     parts["qloo_affinity"] = q["affinity"]
@@ -609,6 +767,8 @@ async def placement_research(run_id: uuid.UUID, project_id: uuid.UUID, area: dic
                                        f"category fit for {a['role'].replace('_', ' ')} audiences."
                                        + (f" Qloo affinity to this audience's interests: {q['affinity']:.2f}." if q and q.get("affinity") is not None else "")),
                     qloo_relevance=({"affinity": q.get("affinity"), "qloo_id": q.get("qloo_id"),
+                                     "affinity_rank_in_candidates": parts.get("affinity_rank"),
+                                     "explanation": q.get("explanation"),
                                      "meaning": "Qloo affinity to audience interests; not willingness to collaborate"} if q else
                                     {"state": "not_available"}),
                     practical_evidence_ids=[str(place_ev)] if place_ev else [], activation=activation,

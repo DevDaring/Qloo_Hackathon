@@ -93,7 +93,7 @@ export default function Login() {
             </Link>
           </div>
           <h1 className="font-display text-3xl font-extrabold tracking-tight">Sign in</h1>
-          <p className="mt-1.5 text-[15px] text-muted">Welcome to LaunchLens. Jury members can use the access below.</p>
+          <p className="mt-1.5 text-[15px] text-muted">Welcome to LaunchLens — built for the Qloo Agentic Hackathon. Jury members can use the access below.</p>
 
           {/* jury card */}
           <motion.section

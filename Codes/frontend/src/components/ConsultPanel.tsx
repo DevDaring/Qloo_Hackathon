@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Bot, Send, Sparkles, Wand } from 'lucide-react';
-import { mutations, useApiMutation, useConsultHistory } from '../api/hooks';
+import { Bot, Eye, Send, Sparkles, Wand } from 'lucide-react';
+import { mutations, useApiMutation, useConsultHistory, type RevisionBody } from '../api/hooks';
+import { RevisionPreviewSheet } from './RevisionPreview';
 import type { ConsultAnswer } from '../api/types';
 import { humanize } from '../lib/format';
 import { EvidenceChip } from './Evidence';
@@ -18,21 +19,18 @@ export function ConsultPanel() {
   const [last, setLast] = useState<ConsultAnswer | null>(null);
   const toast = useToast();
   const ask = useApiMutation((m: string) => mutations.consult(pid, m), [['consult', pid]]);
-  const apply = useApiMutation(
-    (p: NonNullable<ConsultAnswer['proposed_revision']>) => {
-      const aud = project?.audiences.find((a) => a.name === p.audience_name);
-      return mutations.applyRevision(pid, {
-        kind: p.kind as 'exclude_region',
-        region_name: p.region_name ?? undefined,
-        ad_spend_budget: p.ad_spend_budget ?? undefined,
-        feature_key: p.feature_key ?? undefined,
-        audience_id: aud?.audience_id,
-        role: (p.role as 'purchaser') ?? undefined,
-        rerun: true,
-      });
-    },
-    [['project', pid], ['runs', pid], ['constraints', pid], ['product', pid], ['audiences', pid]],
-  );
+  const [preview, setPreview] = useState<RevisionBody | null>(null);
+  const toBody = (p: NonNullable<ConsultAnswer['proposed_revision']>): RevisionBody => {
+    const aud = project?.audiences.find((a) => a.name === p.audience_name);
+    return {
+      kind: p.kind as RevisionBody['kind'],
+      region_name: p.region_name ?? undefined,
+      ad_spend_budget: p.ad_spend_budget ?? undefined,
+      feature_key: p.feature_key ?? undefined,
+      audience_id: aud?.audience_id,
+      role: (p.role as 'purchaser') ?? undefined,
+    };
+  };
   const items = (hist.data?.items ?? []).slice(-4);
 
   const submit = (text: string) => {
@@ -87,19 +85,10 @@ export function ConsultPanel() {
                   <span className="min-w-0 flex-1 text-[13px]">
                     Proposed revision: <b>{humanize(last.proposed_revision.kind)}</b>{' '}
                     {last.proposed_revision.region_name ?? last.proposed_revision.feature_key ?? last.proposed_revision.ad_spend_budget ?? last.proposed_revision.role ?? ''}
-                    <span className="block text-xs text-muted">{last.proposed_revision.rationale} — not applied until you confirm.</span>
+                    <span className="block text-xs text-muted">{last.proposed_revision.rationale} — nothing changes until you preview and confirm.</span>
                   </span>
-                  <Button
-                    size="sm"
-                    loading={apply.isPending}
-                    onClick={() =>
-                      apply.mutate(last.proposed_revision!, {
-                        onSuccess: () => toast.success('Revision applied as a new version', 'A new research run started; earlier results are preserved.'),
-                        onError: (e) => toast.error('Could not apply revision', e),
-                      })
-                    }
-                  >
-                    Apply &amp; re-run
+<Button size="sm" icon={<Eye className="h-3.5 w-3.5" />} onClick={() => setPreview(toBody(last.proposed_revision!))}>
+                    Preview the change
                   </Button>
                 </div>
               )}
@@ -131,6 +120,7 @@ export function ConsultPanel() {
           <Button type="submit" loading={ask.isPending} aria-label="Ask" icon={<Send className="h-4 w-4" />} />
         </form>
       </div>
+      <RevisionPreviewSheet open={!!preview} body={preview} onClose={() => setPreview(null)} rationale={last?.proposed_revision?.rationale} />
     </Card>
   );
 }

@@ -16,6 +16,7 @@ import {
   Palette,
   Plus,
   RefreshCw,
+  Route,
   Save,
   ScanEye,
   ThumbsDown,
@@ -26,8 +27,12 @@ import { ApiError, downloadUrl } from '../api/client';
 import { mutations, useApiMutation, useBrief, useBriefs, useEstimate, useProviders, useStrategies } from '../api/hooks';
 import type { ApprovalState, Asset, AssetQuality, BriefDetail, BriefListItem, Orientation, Preset } from '../api/types';
 import { PageWrap } from '../components/AppShell';
+import { ActionPreview } from '../components/ActionPreview';
+import { InteractiveMedia } from '../components/InteractiveMedia';
 import { EvidenceBadge, EvidenceChip } from '../components/Evidence';
 import { JobCard } from '../components/JobCard';
+import { PilotCard, WhyThisMessage } from '../components/CreativeTrace';
+import { Editable, LockNote, useLocked } from '../components/Locked';
 import { Modal } from '../components/Overlay';
 import { useProjectCtx } from '../components/ProjectContext';
 import { useToast } from '../components/Toast';
@@ -49,7 +54,6 @@ import {
   Tabs,
   Textarea,
   Toggle,
-  Tooltip,
 } from '../components/ui';
 import { VideoPlayer } from '../components/VideoPlayer';
 import { cn, fmtUsd, humanize, timeAgo } from '../lib/format';
@@ -70,11 +74,14 @@ function latest(assets: Asset[], kind: string, preset?: string) {
 }
 
 export default function AdStudio() {
-  const { pid } = useProjectCtx();
+  const { pid, sel } = useProjectCtx();
   const q = useBriefs(pid);
   const [params, setParams] = useSearchParams();
   const items = q.data?.items ?? [];
-  const bid = params.get('b') && items.some((b) => b.id === params.get('b')) ? params.get('b')! : items[0]?.id;
+  // default: a brief in the working context, preferring one that already has a flyer to look at
+  const inCtx = items.filter((b) => (!sel.areaId || b.area_id === sel.areaId) && (!sel.audienceId || b.audience_version_id === sel.audienceId));
+  const ctxBrief = (inCtx.find((b) => !b.stale && b.assets.some((a) => a.kind === 'flyer')) ?? inCtx[0])?.id;
+  const bid = params.get('b') && items.some((b) => b.id === params.get('b')) ? params.get('b')! : ctxBrief ?? items[0]?.id;
   const [newOpen, setNewOpen] = useState(false);
   return (
     <PageWrap className="max-w-[1600px]">
@@ -83,9 +90,11 @@ export default function AdStudio() {
         title="Ad studio"
         description="Audience-specific flyers and videos. Copy is rendered deterministically on top of xAI imagery, checked for quality and claims, and never auto-approved."
         actions={
-          <Button variant="brand" icon={<Plus className="h-4 w-4" />} onClick={() => setNewOpen(true)}>
-            New brief from strategy
-          </Button>
+          <Editable note>
+            <Button variant="brand" icon={<Plus className="h-4 w-4" />} onClick={() => setNewOpen(true)}>
+              New brief from strategy
+            </Button>
+          </Editable>
         }
       />
       {q.isLoading && (
@@ -100,7 +109,7 @@ export default function AdStudio() {
       )}
       {q.error && <ErrorState error={q.error} onRetry={() => q.refetch()} />}
       {q.data && items.length === 0 && (
-        <EmptyState icon={<WandSparkles className="h-5 w-5" />} title="No creative briefs yet" action={<Button onClick={() => setNewOpen(true)}>Create a brief</Button>}>
+        <EmptyState icon={<WandSparkles className="h-5 w-5" />} title="No creative briefs yet" action={<Editable note><Button onClick={() => setNewOpen(true)}>Create a brief</Button></Editable>}>
           Briefs are drafted by the workflow after strategies are written, or you can create one from any current strategy.
         </EmptyState>
       )}
@@ -162,23 +171,29 @@ function VariantCard({ b, active, onClick }: { b: BriefListItem; active: boolean
   );
 }
 
-type Tab = 'copy' | 'storyboard' | 'video' | 'decisions' | 'jobs';
+type Tab = 'why' | 'copy' | 'storyboard' | 'video' | 'decisions' | 'jobs';
 
 function BriefWorkspace({ bid, onSwitch }: { bid: string; onSwitch: (id: string) => void }) {
   const { pid } = useProjectCtx();
   const q = useBrief(bid);
   const [preset, setPreset] = useState<Preset>('square');
-  const [tab, setTab] = useState<Tab>('copy');
+  const [tab, setTab] = useState<Tab>('why');
   const [imgOpen, setImgOpen] = useState<{ presets: Preset[]; regen: boolean } | null>(null);
   const [vidOpen, setVidOpen] = useState(false);
   const [dupOpen, setDupOpen] = useState(false);
   const providers = useProviders().data;
   const toast = useToast();
   const approve = useApiMutation((s: ApprovalState) => mutations.approveBrief(bid, s), [['brief', bid], ['briefs', pid]]);
+  const locked = useLocked();
+  const imgEst = useEstimate(bid, { presets: [preset], mode: 'animatic', narration: false });
+  const vidEst = useEstimate(bid, { mode: 'full', narration: false }, tab === 'video');
   if (q.isLoading) return <SkeletonCard lines={12} />;
   if (q.error) return <ErrorState error={q.error} onRetry={() => q.refetch()} />;
   const b = q.data!;
   const flyer = latest(b.assets, 'flyer', preset);
+  const flyerItems = PRESETS.map((p) => latest(b.assets, 'flyer', p.key))
+    .filter((a): a is Asset => !!a)
+    .map((a) => ({ src: a.url, alt: `${humanize(a.preset ?? 'flyer')} flyer · ${b.content.headline}`, caption: `${a.width}×${a.height} · v${a.version} · ${humanize(a.approval_state)}`, meta: 'Generated by LaunchLens' }));
   const blocked = Object.values(b.content.claim_issues ?? {}).some((v) => v.some((i) => i.severity === 'block'));
   const genBlock = b.stale ? `Brief is stale (${b.stale_reason}). Create a fresh brief first.` : blocked ? 'Remove unsupported claims from the copy first.' : providers && !providers.media.configured ? 'xAI is not configured on the server.' : null;
   const tr = TRANSLATION[b.translation_status] ?? { label: humanize(b.translation_status), tone: 'neutral' as const };
@@ -196,6 +211,9 @@ function BriefWorkspace({ bid, onSwitch }: { bid: string; onSwitch: (id: string)
           <Badge tone={tr.tone}>{tr.label}</Badge>
           <Badge tone={APPROVAL_TONE[b.approval_state] ?? 'neutral'}>Brief: {humanize(b.approval_state)}</Badge>
           <span className="text-xs text-subtle">v{b.version} · lock {b.lock_version} · {timeAgo(b.updated_at)}</span>
+          {locked ? (
+            <LockNote className="ml-auto">Read-only sample — approval and edits are off. Duplicate the project to edit.</LockNote>
+          ) : (
           <div className="ml-auto flex flex-wrap gap-2">
             <Button size="sm" variant="outline" icon={<Copy className="h-3.5 w-3.5" />} onClick={() => setDupOpen(true)}>
               Duplicate for another audience
@@ -223,6 +241,7 @@ function BriefWorkspace({ bid, onSwitch }: { bid: string; onSwitch: (id: string)
               Approve brief
             </Button>
           </div>
+          )}
         </div>
         {b.stale && (
           <Callout tone="warn" className="mt-3" icon={<AlertTriangle className="h-4 w-4 text-warn" />}>
@@ -255,15 +274,21 @@ function BriefWorkspace({ bid, onSwitch }: { bid: string; onSwitch: (id: string)
               <div className="grid-bg absolute inset-0 opacity-50" aria-hidden />
               <AnimatePresence mode="wait">
                 {flyer ? (
-                  <motion.img
+                  <motion.div
                     key={flyer.id}
-                    src={flyer.url}
-                    alt={`${preset} flyer: ${b.content.headline}`}
                     initial={{ opacity: 0, scale: 0.97 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0 }}
-                    className={cn('relative max-h-[640px] rounded-xl shadow-lift', preset === 'vertical' ? 'w-auto max-w-[320px]' : preset === 'portrait' ? 'max-w-[400px]' : 'max-w-[460px]', 'w-full object-contain')}
-                  />
+                    className={cn('relative w-full', preset === 'vertical' ? 'max-w-[320px]' : preset === 'portrait' ? 'max-w-[400px]' : 'max-w-[460px]')}
+                  >
+                    <InteractiveMedia
+                      items={flyerItems}
+                      index={Math.max(0, flyerItems.findIndex((x) => x.src === flyer.url))}
+                      aspect={preset === 'vertical' ? 'aspect-[9/16]' : preset === 'portrait' ? 'aspect-[4/5]' : 'aspect-square'}
+                      frameClassName="shadow-lift"
+                      showCaption={false}
+                    />
+                  </motion.div>
                 ) : (
                   <motion.div key={`mock-${preset}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative w-full max-w-[360px]">
                     <MockFlyer b={b} preset={preset} />
@@ -286,23 +311,40 @@ function BriefWorkspace({ bid, onSwitch }: { bid: string; onSwitch: (id: string)
                 <span className="text-xs text-muted">No {preset} flyer yet.</span>
               )}
               <div className="ml-auto flex flex-wrap gap-2">
-                <Tooltip content={genBlock ?? 'Regenerate only the background; copy, product photo and layout are kept.'}>
-                  <span>
-                    <Button size="sm" variant="outline" icon={<RefreshCw className="h-3.5 w-3.5" />} disabled={!!genBlock || !flyer} onClick={() => setImgOpen({ presets: [preset], regen: true })}>
-                      Regenerate background
-                    </Button>
-                  </span>
-                </Tooltip>
-                <Tooltip content={genBlock ?? `Compose a ${preset} flyer (switch aspect ratio).`}>
-                  <span>
-                    <Button size="sm" variant="brand" icon={<ImagePlus className="h-3.5 w-3.5" />} disabled={!!genBlock} onClick={() => setImgOpen({ presets: [preset], regen: false })}>
-                      Generate {flyer ? 'again' : preset}
-                    </Button>
-                  </span>
-                </Tooltip>
+                <ActionPreview
+                  tip="Regenerate only the background; copy, product photo and layout are kept. Opens the cost review first."
+                  disabledReason={genBlock ?? (!flyer ? 'Generate this format once before regenerating its background.' : undefined)}
+                  inlineReason={false}
+                  edit
+                >
+                  <Button size="sm" variant="outline" icon={<RefreshCw className="h-3.5 w-3.5" />} disabled={!!genBlock || !flyer} onClick={() => setImgOpen({ presets: [preset], regen: true })}>
+                    Regenerate background
+                  </Button>
+                </ActionPreview>
+                <ActionPreview
+                  tip={`Create the selected format (${preset}). ${imgEst.data ? `Current estimate ≤ ${imgEst.data.images.usd === 'unknown' ? 'unknown' : `$${Number(imgEst.data.images.usd).toFixed(3)}`}.` : ''} Opens the cost review — nothing is spent until you confirm.`}
+                  title="Generate flyers"
+                  details={
+                    <>
+                      <p>Creates the selected format: an xAI background with the real product photo, logo and exact copy composed on top.</p>
+                      <p>
+                        <b className="text-fg">Current estimate:</b> {imgEst.data ? (imgEst.data.images.usd === 'unknown' ? 'unknown' : `≤ $${Number(imgEst.data.images.usd).toFixed(3)} for ${imgEst.data.images.count} image(s)`) : '…'}
+                        {imgEst.data && <span className="block text-xs text-subtle">Source: {imgEst.data.images.source}</span>}
+                      </p>
+                      <p>Every result is checked automatically and needs your review before approval. Clicking opens the cost review with a spending cap — nothing is spent until you confirm.</p>
+                    </>
+                  }
+                  disabledReason={genBlock ?? undefined}
+                  edit
+                >
+                  <Button size="sm" variant="brand" icon={<ImagePlus className="h-3.5 w-3.5" />} disabled={!!genBlock} onClick={() => setImgOpen({ presets: [preset], regen: false })}>
+                    Generate {flyer ? 'again' : preset}
+                  </Button>
+                </ActionPreview>
               </div>
             </div>
           </Card>
+          <PilotCard bid={b.id} />
           {flyer && <QualityPanel q={flyer.quality} />}
         </div>
 
@@ -314,6 +356,7 @@ function BriefWorkspace({ bid, onSwitch }: { bid: string; onSwitch: (id: string)
             value={tab}
             onChange={setTab}
             tabs={[
+              { key: 'why', label: 'Why this message?', icon: <Route className="h-3.5 w-3.5" /> },
               { key: 'copy', label: 'Copy', icon: <Palette className="h-3.5 w-3.5" /> },
               { key: 'storyboard', label: 'Storyboard', icon: <Layers className="h-3.5 w-3.5" />, count: b.storyboard?.scenes.length },
               { key: 'video', label: 'Video', icon: <Film className="h-3.5 w-3.5" />, count: videos.length },
@@ -321,18 +364,35 @@ function BriefWorkspace({ bid, onSwitch }: { bid: string; onSwitch: (id: string)
               { key: 'jobs', label: 'Jobs', icon: <Clapperboard className="h-3.5 w-3.5" />, count: b.jobs.length },
             ]}
           />
+          {tab === 'why' && <WhyThisMessage bid={b.id} onSwitch={onSwitch} />}
           {tab === 'copy' && <CopyForm b={b} onSaved={onSwitch} />}
           {tab === 'storyboard' && <Storyboard b={b} />}
           {tab === 'video' && (
             <div className="space-y-4">
               <div className="flex flex-wrap items-center gap-2">
-                <Tooltip content={genBlock ?? 'Generate or re-assemble video for this brief.'}>
-                  <span>
-                    <Button variant="brand" icon={<Clapperboard className="h-4 w-4" />} disabled={!!genBlock || !b.storyboard} onClick={() => setVidOpen(true)}>
-                      Generate video…
-                    </Button>
-                  </span>
-                </Tooltip>
+                <ActionPreview
+                  tip={`Create the selected formats (vertical and landscape video). ${vidEst.data ? `Current estimate ≈ ${vidEst.data.video.clips_list_usd === 'unknown' ? 'unknown' : `$${(Number(vidEst.data.video.frames_usd) + Number(vidEst.data.video.clips_list_usd)).toFixed(2)}`}.` : ''} Opens the cost review — nothing is spent until you confirm.`}
+                  title="Generate video"
+                  details={
+                    <>
+                      <p>Creates the selected formats: xAI clips for each storyboard scene, assembled into vertical and landscape MP4s with captions and a product end card.</p>
+                      {vidEst.data && (
+                        <p>
+                          <b className="text-fg">Current estimate:</b> frames {vidEst.data.video.frames_usd === 'unknown' ? 'unknown' : `$${Number(vidEst.data.video.frames_usd).toFixed(3)}`} + clips{' '}
+                          {vidEst.data.video.clips_list_usd === 'unknown' ? 'unknown' : `$${Number(vidEst.data.video.clips_list_usd).toFixed(3)}`} ({vidEst.data.video.generated_seconds}s).{' '}
+                          <span className="block text-xs text-subtle">Held against your cap: {vidEst.data.video.clips_held_usd === 'unknown' ? 'unknown' : `$${Number(vidEst.data.video.clips_held_usd).toFixed(3)}`} for clips (headroom).</span>
+                        </p>
+                      )}
+                      <p>Videos need your review before approval; an animatic draft is never presented as xAI video. Clicking opens the cost review — nothing is spent until you confirm.</p>
+                    </>
+                  }
+                  disabledReason={genBlock ?? (!b.storyboard ? 'This brief has no storyboard yet.' : undefined)}
+                  edit
+                >
+                  <Button variant="brand" icon={<Clapperboard className="h-4 w-4" />} disabled={!!genBlock || !b.storyboard} onClick={() => setVidOpen(true)}>
+                    Generate video…
+                  </Button>
+                </ActionPreview>
                 <span className="text-xs text-muted">Animatic drafts are stills only and are never presented as xAI video.</span>
               </div>
               <VideoList assets={videos} lang={b.language} />
@@ -387,6 +447,7 @@ function MockFlyer({ b, preset }: { b: BriefDetail; preset: Preset }) {
 
 function AssetApproval({ asset }: { asset: Asset }) {
   const { pid } = useProjectCtx();
+  const locked = useLocked();
   const toast = useToast();
   const m = useApiMutation((s: ApprovalState) => mutations.setApproval(asset.id, s), [['brief'], ['briefs', pid], ['assets', pid]]);
   const set = (s: ApprovalState) =>
@@ -398,6 +459,7 @@ function AssetApproval({ asset }: { asset: Asset }) {
           e instanceof ApiError && e.code === 'unresolved_quality' ? new Error('This asset has unresolved quality or fidelity findings, so it stays a draft. Fix and regenerate first.') : e,
         ),
     });
+  if (locked) return null;
   return (
     <span className="inline-flex gap-1">
       <Button size="sm" variant="ghost" onClick={() => set('approved')} loading={m.isPending && m.variables === 'approved'} icon={<CheckCircle2 className="h-3.5 w-3.5 text-ok" />}>
@@ -527,6 +589,7 @@ function CopyForm({ b, onSaved }: { b: BriefDetail; onSaved: (id: string) => voi
       </div>
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
         <p className="text-xs text-muted">Saving creates brief v{b.version + 1}. A copy edit re-composes media only — research and strategy are untouched.</p>
+        <Editable note>
         <Button
           variant="brand"
           icon={<Save className="h-4 w-4" />}
@@ -547,6 +610,7 @@ function CopyForm({ b, onSaved }: { b: BriefDetail; onSaved: (id: string) => voi
         >
           Save copy
         </Button>
+        </Editable>
       </div>
     </Card>
   );
@@ -684,9 +748,11 @@ function SceneEditor({ s, lang }: { s: NonNullable<BriefDetail['storyboard']>['s
           <p className="text-xs text-muted">
             {f.shot_description !== s.shot_description || Number(f.duration_s) !== s.duration_s ? 'Visual change: this scene’s clip must be regenerated; others are reused.' : 'Caption/narration change: re-assembly only, no new generation.'}
           </p>
+          <Editable>
           <Button size="sm" loading={save.isPending} onClick={() => save.mutate(undefined, { onSuccess: (r) => toast.success('Scene saved', r.note), onError: (e) => toast.error('Could not save scene', e) })}>
             Save scene
           </Button>
+          </Editable>
         </div>
       )}
     </Card>

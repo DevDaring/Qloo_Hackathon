@@ -96,3 +96,79 @@ async def load(project_id: uuid.UUID) -> dict:
                           "tags": e.tags} for e in ents],
             "product_assets": [{"asset_id": str(a.asset_id), "role": a.role, "is_primary": a.is_primary} for a in passets],
         }
+
+
+SNAPSHOT_KEYS = ("project", "product", "constraints", "audiences", "claims", "entities", "product_assets")
+
+
+async def load_for_run(run_id: uuid.UUID) -> dict:
+    """The run's frozen inputs. A run (and any experiment arm copied from it)
+    always works from the snapshot taken when it started, so later edits to
+    the project cannot change what the run computes. Runs created before full
+    snapshots existed fall back to live data for the missing keys."""
+    from ..models import ResearchRun
+    async with session_scope() as s:
+        run = await s.get(ResearchRun, run_id)
+        snap = dict(run.input_snapshot or {})
+        project_id = run.project_id
+    if all(k in snap for k in SNAPSHOT_KEYS):
+        return {k: snap[k] for k in SNAPSHOT_KEYS} | {"runtime": snap.get("runtime", {})}
+    live = await load(project_id)
+    return {k: snap.get(k, live.get(k)) for k in SNAPSHOT_KEYS} | {"runtime": snap.get("runtime", {})}
+
+
+async def freeze_entities(run_id: uuid.UUID) -> list[dict]:
+    """After entity resolution (including human decisions), copy the decided
+    signals for the run's audience versions into the run snapshot."""
+    from ..models import ResearchRun
+    async with session_scope() as s:
+        run = await s.get(ResearchRun, run_id, with_for_update=True)
+        aud_ids = [uuid.UUID(a["id"]) for a in (run.input_snapshot or {}).get("audiences", [])]
+        rows = (await s.execute(select(ResolvedEntity).where(ResolvedEntity.project_id == run.project_id,
+                                                             ResolvedEntity.audience_version_id.in_(aud_ids)))).scalars().all()
+        ents = [{"id": str(e.id), "audience_version_id": str(e.audience_version_id) if e.audience_version_id else None,
+                 "query_text": e.query_text, "status": e.status, "qloo_id": e.qloo_id, "qloo_type": e.qloo_type,
+                 "canonical_name": e.canonical_name, "candidates": e.candidates, "proxy_for": e.proxy_for,
+                 "proxy_reason": e.proxy_reason, "tags": e.tags} for e in rows]
+        run.input_snapshot = {**(run.input_snapshot or {}), "entities": ents}
+    return ents
+
+
+def signals_from(entities: list[dict], audience_version_id: str | None = None) -> tuple[list[str], list[str]]:
+    """Approved Qloo signals (resolved or explicit proxies) from a snapshot."""
+    rows = [e for e in entities or [] if e.get("status") in ("resolved", "proxy") and e.get("qloo_id")
+            and (audience_version_id is None or e.get("audience_version_id") == audience_version_id)]
+    ents = sorted({e["qloo_id"] for e in rows if not (e.get("qloo_type") or "").startswith("urn:tag")})
+    tags = sorted({e["qloo_id"] for e in rows if (e.get("qloo_type") or "").startswith("urn:tag")})
+    return ents[:10], tags[:10]
+
+
+def runtime_info() -> dict:
+    """Configuration that can confound comparisons between runs."""
+    import hashlib
+    from pathlib import Path
+
+    from ..config import settings
+    from ..providers import llm
+    pricing = Path(settings.PROVIDER_PRICING_FILE)
+    return {"reasoning_primary": llm.primary_model(),
+            "reasoning_fallback": (f"{settings.LLM_FALLBACK_PROVIDER}" if settings.LLM_ALLOW_FALLBACK else None),
+            "xai_text_model": settings.XAI_TEXT_MODEL, "image_model": settings.XAI_IMAGE_MODEL,
+            "video_model": settings.XAI_VIDEO_MODEL, "qloo_base_url": settings.QLOO_BASE_URL,
+            "translate_model": settings.SARVAM_TRANSLATE_MODEL,
+            "pricing_sha256": hashlib.sha256(pricing.read_bytes()).hexdigest()[:16] if pricing.exists() else None,
+            "max_run_cost_usd": str(settings.MAX_RUN_COST_USD)}
+
+
+async def refresh_snapshot(run_id: uuid.UUID) -> None:
+    """Re-take the snapshot (only before any research has happened, e.g. after
+    the owner fixes intake problems and resumes)."""
+    from ..models import ResearchRun
+    async with session_scope() as s:
+        run = await s.get(ResearchRun, run_id)
+        project_id = run.project_id
+    live = await load(project_id)
+    async with session_scope() as s:
+        run = await s.get(ResearchRun, run_id, with_for_update=True)
+        run.input_snapshot = {**(run.input_snapshot or {}), **{k: live[k] for k in SNAPSHOT_KEYS},
+                              "runtime": runtime_info()}

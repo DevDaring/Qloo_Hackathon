@@ -87,7 +87,7 @@ async def _stage(state: LaunchState, config, stage: str, status: str, message: s
 
 # ---------------------------------------------------------------- nodes ------
 async def intake_validator(state: LaunchState, config) -> dict:
-    ctx = await ctxsvc.load(uuid.UUID(state["project_id"]))
+    ctx = await ctxsvc.load_for_run(uuid.UUID(state["run_id"]))
     v = research.validate_intake(ctx)
     upd = await _stage(state, config, "intake_validator", "completed" if v["ok"] else "needs_input",
                        "Checked product facts and constraints", critical=len(v["critical"]), optional=len(v["optional"]))
@@ -100,11 +100,12 @@ async def await_intake(state: LaunchState, config) -> dict:
     decision = interrupt({"type": "intake", "title": "Some critical product or launch facts are missing",
                           "critical": state["intake"]["critical"], "optional": state["intake"]["optional"],
                           "resume_with": {"action": "retry"}})
+    await ctxsvc.refresh_snapshot(uuid.UUID(state["run_id"]))  # pick up the owner's fixes before re-validating
     return {"pending_decision": None, "stage_statuses": {"await_intake": f"resumed:{decision.get('action', 'retry')}"}}
 
 
 async def research_planner(state: LaunchState, config) -> dict:
-    ctx = await ctxsvc.load(uuid.UUID(state["project_id"]))
+    ctx = await ctxsvc.load_for_run(uuid.UUID(state["run_id"]))
     areas = await research.ensure_areas(uuid.UUID(state["project_id"]), ctx["constraints"])
     plan = {"areas": len(areas), "tasks": [f"places+climate:{a['name']}" for a in areas] +
             ([f"taste:{a['name']}" for a in areas] if state.get("qloo_enabled", True) else []),
@@ -122,9 +123,11 @@ async def entity_resolver(state: LaunchState, config) -> dict:
     if not state.get("qloo_enabled", True):
         return {**await _stage(state, config, "entity_resolver", "skipped", "Qloo disabled for this comparison run"),
                 "entity_status": {"status": "disabled"}}
-    ctx = await ctxsvc.load(uuid.UUID(state["project_id"]))
+    ctx = await ctxsvc.load_for_run(uuid.UUID(state["run_id"]))
     budget = qloo.CallBudget()
     res = await research.resolve_entities(uuid.UUID(state["project_id"]), ctx["audiences"], budget)
+    if res["status"] in ("ok", "unavailable"):
+        await ctxsvc.freeze_entities(uuid.UUID(state["run_id"]))  # downstream steps use these frozen signals
     status = {"ok": "completed", "needs_decision": "needs_input", "unavailable": "unavailable"}[res["status"]]
     upd = await _stage(state, config, "entity_resolver", status,
                        res.get("message") or f"Resolved audience interests ({len(res['ambiguous'])} need a choice)",
@@ -142,11 +145,21 @@ async def await_entities(state: LaunchState, config) -> dict:
 
 async def geographic_researcher(state: LaunchState, config) -> dict:
     await _stage(state, config, "geographic_researcher", "running", "Gathering places and climate evidence")
-    ctx = await ctxsvc.load(uuid.UUID(state["project_id"]))
+    ctx = await ctxsvc.load_for_run(uuid.UUID(state["run_id"]))
     run_id, pid = uuid.UUID(state["run_id"]), uuid.UUID(state["project_id"])
     areas = [a for a in state["areas"] if not a.get("error")]
-    results = await research.run_parallel(areas, lambda a: research.geographic_research(run_id, pid, a, ctx["product"]),
-                                          settings.MAX_PROVIDER_CONCURRENCY)
+    async with session_scope() as s:
+        pinned = ((await s.get(ResearchRun, run_id)).input_snapshot or {}).get("pinned_practical_from")
+    if pinned:
+        # Experiment arm: reuse the baseline's practical evidence byte-for-byte (no provider calls).
+        from ..services import experiments
+        results = []
+        for a in areas:
+            n = await experiments.copy_practical(run_id, uuid.UUID(pinned), uuid.UUID(a["area_id"]))
+            results.append({"area_id": a["area_id"], "pinned_from": pinned, "evidence_copied": n})
+    else:
+        results = await research.run_parallel(areas, lambda a: research.geographic_research(run_id, pid, a, ctx["product"]),
+                                              settings.MAX_PROVIDER_CONCURRENCY)
     geo, errors = {}, []
     for a, r in zip(areas, results, strict=True):
         if isinstance(r, Exception):
@@ -160,12 +173,16 @@ async def geographic_researcher(state: LaunchState, config) -> dict:
 
 
 async def taste_analyst(state: LaunchState, config) -> dict:
-    ctx = await ctxsvc.load(uuid.UUID(state["project_id"]))
+    ctx = await ctxsvc.load_for_run(uuid.UUID(state["run_id"]))
     run_id, pid = uuid.UUID(state["run_id"]), uuid.UUID(state["project_id"])
     budget = qloo.CallBudget()
     areas = [a for a in state["areas"] if not a.get("error")]
+    entities = ctx.get("entities") or []
+    common = await research.common_taste(run_id, pid, areas, ctx["audiences"], entities, budget,
+                                         state.get("qloo_enabled", True))
     results = await research.run_parallel(
-        areas, lambda a: research.taste_analysis(run_id, pid, a, ctx["audiences"], budget, state.get("qloo_enabled", True)),
+        areas, lambda a: research.taste_analysis(run_id, pid, a, ctx["audiences"], budget, state.get("qloo_enabled", True),
+                                                 entities=entities),
         min(2, settings.MAX_PROVIDER_CONCURRENCY))
     taste, errors = {}, []
     for a, r in zip(areas, results, strict=True):
@@ -173,17 +190,25 @@ async def taste_analyst(state: LaunchState, config) -> dict:
             errors.append({"stage": "taste_analyst", "area": a["name"], "message": str(r)[:300]})
         else:
             taste[a["area_id"]] = r
-    states = {t.get("state") for t in taste.values()}
-    status = "completed" if states == {"available"} else ("skipped" if states <= {"disabled_by_experiment"} else "partial")
-    upd = await _stage(state, config, "taste_analyst", status, "Taste signals " + ", ".join(sorted(s for s in states if s)),
-                       qloo_calls=budget.used, cache_hits=budget.cache_hits)
+    for aid, cm in common.items():
+        taste.setdefault(aid, {"area_id": aid, "by_audience": {}})["common"] = cm
+    cstates = {cm.get("state") for cm in common.values()}
+    status = ("completed" if "available" in cstates else
+              ("skipped" if cstates <= {"disabled_by_experiment"} else "partial"))
+    await research.set_run(run_id, counts={"qloo": budget.summary()})
+    upd = await _stage(state, config, "taste_analyst", status,
+                       "Cultural comparison: " + ", ".join(sorted(s for s in cstates if s)),
+                       qloo_calls=budget.used, physical_attempts=budget.stats.get("physical_attempts", 0),
+                       cache_hits=budget.cache_hits)
     return {**upd, "taste": taste, "errors": errors}
 
 
 async def market_evaluator(state: LaunchState, config) -> dict:
-    ctx = await ctxsvc.load(uuid.UUID(state["project_id"]))
+    ctx = await ctxsvc.load_for_run(uuid.UUID(state["run_id"]))
+    taste = state.get("taste") or {}
     results = await research.evaluate(uuid.UUID(state["run_id"]), uuid.UUID(state["project_id"]), state["areas"],
-                                      ctx["constraints"], state.get("taste") or {}, state.get("qloo_enabled", True))
+                                      ctx["constraints"], taste, state.get("qloo_enabled", True),
+                                      common={aid: t.get("common") or {} for aid, t in taste.items()})
     summary = [{"area_id": r["area_id"], "name": r["name"], "eligible": r["eligible"], "status": r["status"],
                 "planning_index": r["planning_index"], "available_weight": r["available_weight"], "rank": r["rank"],
                 "practical_rank": r.get("practical_rank")} for r in results]
@@ -194,7 +219,7 @@ async def market_evaluator(state: LaunchState, config) -> dict:
 
 
 async def placement_researcher(state: LaunchState, config) -> dict:
-    ctx = await ctxsvc.load(uuid.UUID(state["project_id"]))
+    ctx = await ctxsvc.load_for_run(uuid.UUID(state["run_id"]))
     run_id, pid = uuid.UUID(state["run_id"]), uuid.UUID(state["project_id"])
     eligible = {a["area_id"] for a in state["assessments"] if a["eligible"]}
     n = 0
@@ -207,7 +232,7 @@ async def placement_researcher(state: LaunchState, config) -> dict:
 
 
 async def await_selection(state: LaunchState, config) -> dict:
-    ctx = await ctxsvc.load(uuid.UUID(state["project_id"]))
+    ctx = await ctxsvc.load_for_run(uuid.UUID(state["run_id"]))
     eligible = [a for a in state["assessments"] if a["eligible"]]
     async with session_scope() as s:
         run = await s.get(ResearchRun, uuid.UUID(state["run_id"]))
@@ -226,7 +251,7 @@ async def await_selection(state: LaunchState, config) -> dict:
 
 async def strategy_writer(state: LaunchState, config) -> dict:
     await _stage(state, config, "strategy_writer", "running", "Writing evidence-linked strategies")
-    ctx = await ctxsvc.load(uuid.UUID(state["project_id"]))
+    ctx = await ctxsvc.load_for_run(uuid.UUID(state["run_id"]))
     ids, errors = [], []
     for sel in state.get("selections") or []:
         aud = next((a for a in ctx["audiences"] if a["id"] == sel["audience_version_id"]), None)
@@ -252,7 +277,7 @@ async def strategy_writer(state: LaunchState, config) -> dict:
 async def creative_planner(state: LaunchState, config) -> dict:
     """Default creative set: one brief per strategy in each audience's first
     language, plus a second feature-emphasis angle for end users."""
-    ctx = await ctxsvc.load(uuid.UUID(state["project_id"]))
+    ctx = await ctxsvc.load_for_run(uuid.UUID(state["run_id"]))
     req = state.get("creative_request") or {}
     ids, errors = list(state.get("brief_ids") or []), []
     if not ids:

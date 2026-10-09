@@ -38,3 +38,17 @@ export function useOnline() {
   }, []);
   return online;
 }
+
+/** true only on the first visit of this key in the browser session (for one-time entrance reveals). */
+export function useFirstVisit(key: string): boolean {
+  const [first] = useState(() => {
+    try {
+      if (sessionStorage.getItem(key)) return false;
+      sessionStorage.setItem(key, '1');
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  return first;
+}

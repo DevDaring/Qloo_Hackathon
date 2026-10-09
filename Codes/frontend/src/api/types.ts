@@ -101,6 +101,8 @@ export interface Project {
   country_code: string;
   currency: string;
   is_demo: boolean;
+  /** read-only sample: every mutating request returns 409 project_locked */
+  locked?: boolean;
   archived: boolean;
   saved_map_state: MapState;
   created_at: ISO;
@@ -120,6 +122,13 @@ export interface ProjectListItem extends Project {
   last_run: RunSummary | null;
   recent_outputs: Asset[];
   strategies: number;
+  thumbnail_url?: string | null;
+  journey?: {
+    current: JourneyStageKey;
+    last_completed: string | null;
+    stages: { key: JourneyStageKey; status: JourneyStatus }[];
+    next_action: JourneyNextAction | null;
+  };
 }
 
 export interface Feature {
@@ -842,6 +851,19 @@ export interface ProvidersStatus {
   storage: { backend: string };
   limits: Record<string, string | number>;
   legend: Record<string, string>;
+  checked_at?: ISO;
+  plain?: ProviderPlain[];
+}
+
+export type ProviderPlainState = 'working' | 'backup' | 'partial' | 'not_set_up' | 'key_rejected' | 'unreachable' | 'busy';
+export interface ProviderPlain {
+  key: string;
+  name: string;
+  state: ProviderPlainState;
+  summary: string;
+  impact: string | null;
+  recovery: string[];
+  checked_at: ISO | null;
 }
 
 export interface Usage {
@@ -926,4 +948,299 @@ export interface ConsultAnswer {
   } | null;
   dropped_evidence_ids: string[];
   model: string;
+}
+
+
+/* ======================================================= journey (GET /projects/{id}/journey) */
+export type JourneyStageKey = 'brief' | 'audience' | 'explore' | 'strategy' | 'create' | 'export';
+export type JourneyStatus = 'done' | 'active' | 'attention' | 'todo';
+export interface JourneyNextAction {
+  label: string;
+  /** absolute app path, may carry a #anchor */
+  to: string;
+  why: string;
+  decision_run_id?: string;
+  secondary?: { label: string; action: 'duplicate' | string };
+}
+export interface JourneyResponse {
+  project_id: string;
+  locked: boolean;
+  current: JourneyStageKey;
+  last_completed: string | null;
+  stages: {
+    key: JourneyStageKey;
+    label: string;
+    path: string;
+    status: JourneyStatus;
+    summary: string;
+    blockers: { message: string; to: string; fix: string }[];
+  }[];
+  next_action: JourneyNextAction | null;
+  context: { run_id: string | null; run_status: string | null; product_version: number | null };
+}
+
+/* ======================================================= Feature A: taste story */
+export type EdgeKind = 'qloo_explainability' | 'qloo_combined_set' | 'app_derived' | 'generated_hypothesis';
+export interface EvidenceBrief {
+  id: string;
+  kind: string;
+  nature: string;
+  topic: string;
+  title: string;
+  status: string;
+  source: string;
+  retrieved_at: ISO | null;
+  badge: string;
+}
+export interface StoryInterest {
+  id: string | null;
+  entity_row_id?: string;
+  label: string;
+  query_text: string;
+  status: string;
+  type: string | null;
+  is_tag: boolean;
+  proxy_for: string | null;
+  used_as_signal: boolean;
+}
+export interface CitySignal {
+  state: 'available' | 'sparse' | 'empty' | 'missing' | string;
+  reason?: string;
+  lift?: number | null;
+  log2_lift?: number | null;
+  n_signal?: number;
+  n_baseline?: number;
+  evidence_id?: string;
+  retrieved_at?: ISO | null;
+  formula?: string;
+  meaning?: string;
+}
+export interface StoryRecommendation {
+  id: string;
+  qloo_id: string | null;
+  name: string;
+  category: string;
+  affinity: number;
+  affinity_rank: number;
+  of: number;
+  popularity: number | null;
+  distance_m: number | null;
+  retrieved_at: ISO | null;
+  accessibility: string;
+  explanation: {
+    audience_version_id: string;
+    run_id: string;
+    signal_ids: string[];
+    candidate_id: string | null;
+    evidence_ids: string[];
+    query_fingerprint: string | null;
+    retrieved_at: ISO | null;
+    status: 'provided' | 'not_provided' | 'not_matched' | string;
+    contributions: { id: string; score?: number | null; name?: string; [k: string]: unknown }[] | null;
+    warnings: string[];
+  };
+}
+export interface StoryEdge {
+  from: string;
+  to: string;
+  kind: EdgeKind;
+  label?: string;
+  score?: number | null;
+  cites?: boolean;
+  evidence_ids: string[];
+}
+export interface TasteStory {
+  run_id: string;
+  area: { id: string; name: string | null };
+  audience: { id: string; name: string | null; role: string | null };
+  qloo_enabled: boolean;
+  focus_place_id?: string;
+  focus_note?: string;
+  state: 'complete' | 'partial' | 'no_signals' | 'no_recommendations' | 'qloo_disabled';
+  message: string | null;
+  attribution: 'per_input' | 'combined_set' | null;
+  interests: StoryInterest[];
+  city_signal: CitySignal;
+  recommendations: StoryRecommendation[];
+  placement: {
+    id: string;
+    name: string;
+    place_id: string;
+    category: string;
+    shortlisted: boolean;
+    suitability: number | null;
+    formula: string;
+    status: string;
+    verification: Record<string, string>;
+    accessibility: string;
+    next_action: string;
+    evidence_needed: string;
+    practical_evidence_ids: string[];
+  } | null;
+  hypothesis: {
+    strategy_id: string;
+    version?: number;
+    generated: true;
+    note: string;
+    positioning: string | null;
+    main_feature_key: string | null;
+    message: string | null;
+    message_evidence_ids: string[];
+    pilot_objective: string | null;
+    generator: string | null;
+    model: string | null;
+    from_this_run: boolean;
+  } | null;
+  creative: {
+    brief_id: string;
+    language: string;
+    headline: string | null;
+    decision: { text: string | null; rationale: string | null; kind: string | null; evidence_ids: string[] };
+    preview_url: string | null;
+    preview_stale: boolean | null;
+    generated: true;
+  } | null;
+  edges: StoryEdge[];
+  warnings: string[];
+  legend: Record<EdgeKind, string>;
+  evidence: Record<string, EvidenceBrief>;
+  unknown_evidence_ids: string[];
+}
+
+/* ======================================================= Feature C: audience compare */
+export interface CompareSide {
+  audience: { id: string; name: string; role: string; needs?: string[]; languages?: string[] };
+  interests: StoryInterest[];
+  city_signal: CitySignal;
+  shortlist: { placement_id: string; place_id: string | null; name: string; category: string; rank: number; suitability: number | null; affinity: number | null; shortlisted: boolean }[];
+  strategy: { id: string; positioning: string | null; main_feature_key: string | null; message: string | null; generated: true } | null;
+}
+export interface AudienceCompare {
+  run_id: string;
+  area: { id: string; name: string };
+  shared: { product_version: number | null; constraints_version: number | null; ad_spend_budget: number | null; note: string };
+  a: CompareSide;
+  b: CompareSide;
+  differences: {
+    only_a: string[];
+    only_b: string[];
+    both: { name: string; rank_a: number; rank_b: number }[];
+    interests_only_a: string[];
+    interests_only_b: string[];
+    main_feature_changed: boolean;
+  };
+  changed: boolean;
+  summary: string;
+}
+
+/* ======================================================= revision preview */
+export interface RevisionPreview {
+  kind: string;
+  summary: string;
+  affected: Record<string, unknown>;
+  preserved: Record<string, unknown>;
+  cost_if_applied: string;
+  writes: string;
+  provider_calls?: string;
+}
+
+/* ======================================================= Feature D: creative trace */
+export interface CreativeTrace {
+  brief_id: string;
+  version: number;
+  language: string;
+  channel: string;
+  copy: { headline: string | null; body: string | null; cta: string | null; disclaimer: string | null };
+  translation_status: string;
+  chain: {
+    product_fact: {
+      feature_key: string | null;
+      name: string | null;
+      mechanism: string | null;
+      evidence_status: string | null;
+      source: string | null;
+      nature: 'product_fact';
+      operating_conditions: string | null;
+    };
+    strategy: {
+      id: string | null;
+      positioning: string | null;
+      main_feature_rationale: string | null;
+      rationale_evidence: EvidenceBrief[];
+      key_messages: { text: string; evidence: EvidenceBrief[] }[];
+      generated: true;
+      generator?: string | null;
+    };
+    decisions: { decision: string; rationale: string; nature: 'evidence' | 'generated_hypothesis'; evidence: EvidenceBrief[] }[];
+    approved_claims: { id: string; text: string; support_status: string; feature_key: string | null }[];
+  };
+  pilot_card: {
+    label: string;
+    audience: { name: string | null; role: string | null };
+    area: string | null;
+    placement: { id: string; name: string; status: string; next_action: string } | null;
+    message: string | null;
+    measurement: { metric: string | null; target_to_test: string | null; objective: string | null; duration_weeks: number | null };
+    results_recorded: number;
+    results_note: string;
+  };
+  variants: { brief_id: string; audience: string | null; language: string; headline: string | null; strategy_version_id?: string; same_audience: boolean }[];
+  unknown_evidence_ids: string[];
+}
+
+/* ======================================================= Feature E: opportunities */
+export interface Opportunity {
+  placement_id: string;
+  name: string;
+  category: string;
+  area: string | null;
+  area_id: string;
+  audience: { id: string; name: string | null };
+  signal: {
+    affinity: number | null;
+    affinity_rank_in_candidates: number | null;
+    relative_affinity_score: number | null;
+    affinity_rank: number | null;
+    affinity_rank_of: number | null;
+    popularity: number | null;
+    meaning: string;
+  };
+  constraints: { unknown: string[]; accessibility: string; status: string; distance_m: number | null };
+  pilot_proposal: { generated_from_template: true; text: string };
+  next_action: string;
+}
+
+/* ======================================================= Feature B: experiment analysis */
+export interface ExperimentAnalysis {
+  id: string;
+  recorded_at: ISO;
+  baseline: { run_id: string; snapshot_at: ISO };
+  conditions: { held_constant: string[]; varied: string; model?: string; product_version_id?: string; constraint_version_id?: string; [k: string]: unknown };
+  validity: {
+    valid: boolean;
+    practical_evidence_identical: boolean;
+    mismatches: unknown[];
+    pinned_to_baseline: boolean;
+    snapshot_differences: string[];
+    confounders: string[];
+  };
+  practical_evidence_identical: boolean;
+  locations: {
+    area_id: string;
+    area: string;
+    with_qloo: { eligible: boolean; status: string; rank: number | null; planning_index: number | null; cultural_state: string | null; cultural_log2_lift: number | null } | null;
+    without_qloo: { eligible: boolean; status: string; practical_rank: number | null; practical_index: number | null; note?: string } | null;
+    hard_constraints_identical: boolean;
+  }[];
+  location_order: { with_qloo: string[]; without_qloo_practical: string[]; changed: boolean };
+  ranking_only: { area: string; audience_version_id: string; candidates: number; with_qloo_affinity: number; kendall_tau: number | null; practical_top3: string[]; taste_top3: string[]; changed: boolean }[];
+  discovery: { area: string; audience_version_id: string; added_by_qloo: string[]; no_longer_shortlisted: string[]; jaccard_overlap: number | null; qloo_sourced: number }[];
+  feature_emphasis: ({ area: string; audience_version_id: string; with_qloo: string | null; without_qloo: string | null } | { note: string })[];
+  cost_latency: {
+    with_qloo: { cost_usd: number | null; latency_s: number | null; qloo?: unknown };
+    without_qloo: { cost_usd: number | null; latency_s: number | null };
+  };
+  verdict: 'material change' | 'no material change' | string;
+  blinded: { A: Record<string, string[]>; B: Record<string, string[]>; mapping: Record<string, string> | null; ratings?: Record<string, unknown> } | null;
+  notes: string[];
 }

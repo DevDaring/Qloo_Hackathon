@@ -6,6 +6,7 @@ import asyncio
 import json
 import math
 import uuid
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Request
@@ -57,8 +58,9 @@ async def start_run(s: AsyncSession, p: Principal, project_id: uuid.UUID, *, qlo
                       status="queued", qloo_enabled=qloo_enabled, experiment_label=label,
                       product_version_id=uuid.UUID(ctx["product"]["id"]), constraint_version_id=uuid.UUID(ctx["constraints"]["id"]),
                       previous_run_id=prev.id if prev else None, started_by=p.user_id,
-                      input_snapshot={"product": ctx["product"], "constraints": ctx["constraints"], "audiences": ctx["audiences"],
-                                      "previous_selections": prev_sel},
+                      input_snapshot={**{k: ctx[k] for k in ctxsvc.SNAPSHOT_KEYS},
+                                      "previous_selections": prev_sel, "runtime": ctxsvc.runtime_info(),
+                                      "snapshot_at": datetime.now(UTC).isoformat()},
                       input_hash=hashing.research_hash(ctx["constraints"]["hash"], [a["hash"] for a in ctx["audiences"]],
                                                        qloo_enabled, [e["qloo_id"] or "" for e in ctx["entities"]]))
     s.add(run)
@@ -692,73 +694,73 @@ async def run_diff(run_id: uuid.UUID, against: uuid.UUID | None = None, p: Princ
 @router.post("/projects/{project_id}/experiments", tags=["experiments"], status_code=202)
 async def create_experiment(project_id: uuid.UUID, body: S.ExperimentIn, p: Principal = Depends(require_editor),
                             s: AsyncSession = Depends(get_session)):
+    """Start the no-Qloo arm from the baseline's immutable snapshot and its
+    pinned practical evidence; later project edits cannot leak in."""
+    from ..services import experiments
     await check_project(s, p, project_id)
     base = await owned(s, p, ResearchRun, body.run_id)
-    if not base.qloo_enabled:
-        raise AppError(422, "base_without_qloo", "Choose a run that used Qloo as the baseline.")
-    run, job = await start_run(s, p, project_id, qloo_enabled=False, label="without_qloo")
-    async with SessionLocal() as s2:
-        ex = Experiment(project_id=project_id, run_with_qloo_id=base.id, run_without_qloo_id=run.id, conditions={
-            "held_constant": ["product version", "constraint version", "audiences", "practical evidence (cached places & climate)",
-                              "reasoning model", "generation budget"],
-            "varied": "Qloo taste signals withheld (cultural_fit component disabled)",
-            "product_version_id": str(base.product_version_id), "constraint_version_id": str(base.constraint_version_id),
-            "model": llm.primary_model()})
-        s2.add(ex)
-        await s2.commit()
-        return {"experiment_id": str(ex.id), "run": run_out(run), "job": job_out(job)}
+    try:
+        await experiments.validate_baseline(project_id, base)
+    except experiments.BaselineError as e:
+        raise AppError(422, e.code, e.message) from None
+    snap = experiments.experiment_snapshot(base)
+    run_id = uuid.uuid4()
+    run = ResearchRun(id=run_id, project_id=project_id, workspace_id=p.workspace_id, thread_id=f"run-{run_id}",
+                      status="queued", qloo_enabled=False, experiment_label="without_qloo",
+                      product_version_id=base.product_version_id, constraint_version_id=base.constraint_version_id,
+                      previous_run_id=base.id, started_by=p.user_id,
+                      input_snapshot={**snap, "runtime": ctxsvc.runtime_info(), "snapshot_at": datetime.now(UTC).isoformat()},
+                      input_hash=base.input_hash)
+    s.add(run)
+    await s.flush()
+    held = ["product version", "constraint version", "audience versions", "resolved Qloo signals",
+            "practical evidence (copied from the baseline, not re-queried)", "candidate areas", "scoring weights"]
+    ex = Experiment(project_id=project_id, run_with_qloo_id=base.id, run_without_qloo_id=run.id, conditions={
+        "held_constant": held, "varied": "Qloo taste signals withheld (cultural component and Qloo-sourced places absent)",
+        "baseline_run_id": str(base.id), "baseline_snapshot_at": snap.get("baseline_snapshot_at"),
+        "product_version_id": str(base.product_version_id), "constraint_version_id": str(base.constraint_version_id),
+        "runtime_baseline": (base.input_snapshot or {}).get("runtime"), "runtime_experiment": ctxsvc.runtime_info()},
+        metrics={"blind": experiments.new_blind()})
+    s.add(ex)
+    await s.commit()
+    job, _ = await jobs.enqueue(workspace_id=p.workspace_id, project_id=project_id, run_id=run.id, kind="workflow",
+                                payload={"run_id": str(run.id)}, idempotency_key=f"run:{run.id}", created_by=p.user_id,
+                                deadline_s=6 * 3600)
+    return {"experiment_id": str(ex.id), "run": run_out(run), "job": job_out(job)}
 
 
 @router.get("/experiments/{experiment_id}", tags=["experiments"])
 async def get_experiment(experiment_id: uuid.UUID, p: Principal = Depends(current_principal), s: AsyncSession = Depends(get_session)):
+    from ..services import experiments
     ex = await owned(s, p, Experiment, experiment_id)
-    a, b = ex.run_with_qloo_id, ex.run_without_qloo_id
+    return await experiments.analyse(ex)
 
-    async def assess(rid):
-        rows = (await s.execute(select(LocationAssessment, GeographicArea).join(GeographicArea, GeographicArea.id == LocationAssessment.area_id)
-                                .where(LocationAssessment.run_id == rid))).all()
-        return {ar.name: la for la, ar in rows}
-    wa, wb = await assess(a), await assess(b)
 
-    async def practical(rid):
-        rows = (await s.execute(select(EvidenceRecord.area_id, EvidenceRecord.topic, EvidenceRecord.value_numeric).where(
-            EvidenceRecord.run_id == rid, EvidenceRecord.topic.in_(("places", "climate")),
-            EvidenceRecord.kind == "observed_fact"))).all()
-        return sorted((str(t), float(v) if v is not None else None) for _, t, v in rows)
-    same_practical = (await practical(a)) == (await practical(b))
-    rows = []
-    for name in sorted(set(wa) | set(wb)):
-        x, y = wa.get(name), wb.get(name)
-        rows.append({"area": name, "with_qloo": {"eligible": x.eligible, "rank": x.rank, "status": x.status,
-                                                  "planning_index": num(x.planning_index)} if x else None,
-                     "without_qloo": {"eligible": y.eligible, "rank": y.rank, "status": y.status,
-                                      "planning_index": num(y.planning_index), "practical_index": num(y.practical_index)} if y else None,
-                     "hard_constraints_identical": bool(x and y and [(h["name"], h["result"]) for h in x.hard_constraints] ==
-                                                         [(h["name"], h["result"]) for h in y.hard_constraints])})
-
-    async def strat_stats(rid):
-        svs = (await s.execute(select(StrategyVersion).where(StrategyVersion.run_id == rid))).scalars().all()
-        return {"strategies": len(svs), "unsupported_claims_removed": sum(len((sv.validation or {}).get("dropped", {}).get("claims", [])) for sv in svs),
-                "main_features": sorted({sv.content.get("main_feature_key") for sv in svs if sv.content}),
-                "placements": sorted({x["placement_id"] for sv in svs for x in sv.content.get("placement_options", [])})}
-    sa, sb = await strat_stats(a), await strat_stats(b)
-    pa = (await s.execute(select(PlacementCandidate.name).where(PlacementCandidate.run_id == a).order_by(PlacementCandidate.suitability_score.desc()).limit(20))).scalars().all()
-    pb = (await s.execute(select(PlacementCandidate.name).where(PlacementCandidate.run_id == b).order_by(PlacementCandidate.suitability_score.desc()).limit(20))).scalars().all()
-    return {"id": str(ex.id), "conditions": ex.conditions, "practical_evidence_identical": same_practical, "locations": rows,
-            "strategies": {"with_qloo": sa, "without_qloo": sb},
-            "placement_changes": {"only_with_qloo": sorted(set(pa) - set(pb)), "only_without_qloo": sorted(set(pb) - set(pa))},
-            "owner_ratings": ex.owner_ratings,
-            "notes": ["Qloo is not evaluated by agreement with Qloo scores.",
-                      "Without a Qloo key, both arms lack taste signals and differ only by label — results then show no Qloo effect."]}
+class _BlindRating(BaseModel):
+    A: int | None = Field(default=None, ge=1, le=5)
+    B: int | None = Field(default=None, ge=1, le=5)
+    notes: str = Field(default="", max_length=1000)
+    reveal: bool = False
 
 
 @router.patch("/experiments/{experiment_id}/ratings", tags=["experiments"])
-async def rate_experiment(experiment_id: uuid.UUID, body: S.RatingIn, p: Principal = Depends(require_editor),
+async def rate_experiment(experiment_id: uuid.UUID, body: _BlindRating, p: Principal = Depends(require_editor),
                           s: AsyncSession = Depends(get_session)):
+    """Blind preference: rate shortlist A and B without knowing which used Qloo;
+    the mapping is revealed once both are rated (or on explicit reveal)."""
     ex = await owned(s, p, Experiment, experiment_id)
-    ex.owner_ratings = {**(ex.owner_ratings or {}), **{k: max(1, min(5, int(v))) for k, v in body.ratings.items()}}
+    r = dict(ex.owner_ratings or {})
+    for k in ("A", "B"):
+        if getattr(body, k) is not None:
+            r[k] = getattr(body, k)
+    if body.notes:
+        r["notes"] = body.notes
+    if body.reveal or ("A" in r and "B" in r):
+        r["revealed"] = True
+    ex.owner_ratings = r
     await s.commit()
-    return {"owner_ratings": ex.owner_ratings}
+    blind = (ex.metrics or {}).get("blind") or {}
+    return {"owner_ratings": r, "mapping": blind if r.get("revealed") else None}
 
 
 @router.get("/projects/{project_id}/experiments", tags=["experiments"])

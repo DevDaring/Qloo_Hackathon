@@ -27,7 +27,7 @@ from ..providers.base import ProviderError
 from ..security import COOKIE_NAME, Principal, current_principal, issue_token, require_editor, verify_password
 from ..services import assets as assetsvc
 from ..services import context as ctxsvc
-from ..services import events, hashing, revisions
+from ..services import events, hashing, insight, revisions
 from . import schemas as S
 from .deps import asset_out, check_project, client_ip, login_limiter, num, owned, point
 
@@ -75,7 +75,7 @@ async def public_config():
 # ---------------------------------------------------------------- projects ---
 def project_out(p: Project, extra: dict | None = None) -> dict:
     return {"id": str(p.id), "name": p.name, "goal": p.goal, "status": p.status, "country_code": p.country_code,
-            "currency": p.currency, "is_demo": p.is_demo, "archived": p.archived, "saved_map_state": p.saved_map_state,
+            "currency": p.currency, "is_demo": p.is_demo, "locked": p.locked, "archived": p.archived, "saved_map_state": p.saved_map_state,
             "created_at": p.created_at.isoformat(), "updated_at": p.updated_at.isoformat(), **(extra or {})}
 
 
@@ -92,9 +92,17 @@ async def list_projects(include_archived: bool = False, p: Principal = Depends(c
         recent = (await s.execute(select(Asset).where(Asset.project_id == proj.id, Asset.kind.in_(("flyer", "video_final")),
                                                       Asset.deleted_at.is_(None)).order_by(Asset.created_at.desc()).limit(4))).scalars().all()
         n_strat = (await s.execute(select(func.count()).select_from(StrategyVersion).where(StrategyVersion.project_id == proj.id))).scalar_one()
+        photo = (await s.execute(select(ProductAsset).where(ProductAsset.project_id == proj.id,
+                                                            ProductAsset.role == "product_photo")
+                                 .order_by(ProductAsset.is_primary.desc()).limit(1))).scalar_one_or_none()
+        jr = await insight.journey(s, proj.id, locked=proj.locked)
         out.append(project_out(proj, {"last_run": {"id": str(last_run.id), "status": last_run.status, "stage": last_run.stage}
                                       if last_run else None,
-                                      "recent_outputs": [asset_out(a) for a in recent], "strategies": n_strat}))
+                                      "recent_outputs": [asset_out(a) for a in recent], "strategies": n_strat,
+                                      "thumbnail_url": f"/api/v1/assets/{photo.asset_id}/download" if photo else None,
+                                      "journey": {"current": jr["current"], "last_completed": jr["last_completed"],
+                                                  "stages": [{"key": x["key"], "status": x["status"]} for x in jr["stages"]],
+                                                  "next_action": jr["next_action"]}}))
     return {"items": out}
 
 
@@ -140,6 +148,8 @@ async def update_project(project_id: uuid.UUID, body: S.ProjectPatch, p: Princip
 async def save_map_state(project_id: uuid.UUID, state: dict, p: Principal = Depends(require_editor),
                          s: AsyncSession = Depends(get_session)):
     proj = await check_project(s, p, project_id)
+    if proj.locked:  # the shared sample keeps its saved view; visitors' panning is not persisted
+        return {"saved": proj.saved_map_state, "persisted": False}
     proj.saved_map_state = {k: state[k] for k in ("center", "zoom", "filters", "run_id", "area_id", "view") if k in state}
     await s.commit()
     return {"saved": proj.saved_map_state}

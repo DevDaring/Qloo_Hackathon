@@ -84,7 +84,7 @@ async def seed_project(ws: Workspace, user: User) -> Project:
         proj = (await s.execute(select(Project).where(Project.workspace_id == ws.id, Project.name == DEMO_NAME))).scalar_one_or_none()
         if proj:
             return proj
-        proj = Project(workspace_id=ws.id, owner_id=user.id, name=DEMO_NAME, is_demo=True, country_code="IN", currency="INR",
+        proj = Project(workspace_id=ws.id, owner_id=user.id, name=DEMO_NAME, is_demo=True, locked=True, country_code="IN", currency="INR",
                        status="ready_for_research",
                        goal="Find where a connected power wheelchair with a fan and speech amplification may fit in India, "
                             "for whom, and produce evidence-backed pilot ads. All specifications are synthetic placeholders.")

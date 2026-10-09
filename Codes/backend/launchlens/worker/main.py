@@ -83,6 +83,16 @@ async def h_workflow(ctx: Ctx) -> tuple[str, dict]:
     if pending:
         async with session_scope() as s:
             run = await s.get(ResearchRun, run_id)
+            arm = run.experiment_label == "without_qloo"
+            if arm and pending[0].get("type") == "select_targets":
+                # an experiment arm only needs evaluation and placements; it never asks for targets or media
+                run.status, run.pending_decision = "completed", None
+        if arm and pending[0].get("type") == "select_targets":
+            await events.emit(ws, "run.finished", "Comparison arm completed (evaluation and placements only)",
+                              project_id=project_id, run_id=run_id, data={"experiment_arm": True})
+            return "completed", {"experiment_arm": True}
+        async with session_scope() as s:
+            run = await s.get(ResearchRun, run_id)
             run.status, run.pending_decision = "waiting_for_user", pending[0]
         await events.emit(ws, "run.waiting", pending[0].get("title", "Waiting for your decision"), project_id=project_id,
                           run_id=run_id, data={"decision_type": pending[0].get("type")})

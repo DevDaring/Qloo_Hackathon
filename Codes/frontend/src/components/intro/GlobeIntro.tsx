@@ -9,7 +9,7 @@ import maplibregl, { type GeoJSONSource, type Map as MLMap } from 'maplibre-gl';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { RotateCcw, SkipForward } from 'lucide-react';
 import { SPARKLE_CITIES } from './sparkleCities';
-import { BENGALURU, CHENNAI, DELHI, KOLKATA, MUMBAI, OVERLAYS, OverlayBody, OverlayShell, alignOf, type LngLat, type OverlaySpec } from './IntroOverlays';
+import { GlobePoster, BENGALURU, CHENNAI, DELHI, KOLKATA, MUMBAI, OVERLAYS, OverlayBody, OverlayShell, alignOf, type LngLat, type OverlaySpec } from './IntroOverlays';
 
 type Phase = 'globe' | 'night' | 'fly' | 'india' | 'idle';
 const T_NIGHT = 4.0; // Blue Marble → Black Marble night lights, arcs begin
@@ -159,6 +159,7 @@ export default function GlobeIntro({ styleUrl, onFallback }: { styleUrl: string;
   const [cardScale, setCardScale] = useState(1);
   const tRef = useRef(0);
   const rasterOk = useRef(true);
+  const onScreen = useRef(true);
   const lay = useRef(layout(1200, 800));
   const phaseRef = useRef<Phase>('globe');
   const fallbackRef = useRef(onFallback);
@@ -484,6 +485,15 @@ export default function GlobeIntro({ styleUrl, onFallback }: { styleUrl: string;
     }
   };
 
+  /* ------------------------------------------------ pause when scrolled offscreen (as well as hidden tab) */
+  useEffect(() => {
+    const el = box.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver(([e]) => (onScreen.current = e.isIntersecting), { threshold: 0.05 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
   /* ------------------------------------------------ the clock */
   useEffect(() => {
     if (!ready) return;
@@ -496,7 +506,7 @@ export default function GlobeIntro({ styleUrl, onFallback }: { styleUrl: string;
     const tick = (now: number) => {
       const dt = Math.min((now - last) / 1000, 0.25); // rAF stops while the tab is hidden; the cap turns that gap into a pause
       last = now;
-      if (!document.hidden) {
+      if (!document.hidden && onScreen.current) {
         const idleFrozen = reduce && tRef.current >= T_IDLE;
         if (!idleFrozen) tRef.current += dt;
         const t = tRef.current;
@@ -580,9 +590,9 @@ export default function GlobeIntro({ styleUrl, onFallback }: { styleUrl: string;
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0, transition: { duration: 0.8 } }}
-            className="pointer-events-none absolute inset-0 flex items-center justify-center lg:pl-[40%]"
+            className="pointer-events-none absolute inset-0"
           >
-            <div className="aspect-square w-[62%] max-w-[520px] rounded-full bg-[radial-gradient(circle_at_35%_30%,#2B5BBF_0%,#11224A_45%,#070C1C_75%)] shadow-[0_0_120px_20px_rgba(43,91,191,0.35)] lg:w-[48%]" />
+            <GlobePoster />
           </motion.div>
         )}
       </AnimatePresence>

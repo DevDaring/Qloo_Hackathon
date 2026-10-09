@@ -1,25 +1,26 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Archive, ArchiveRestore, ArrowRight, ArrowUpRight, FolderPlus, ImageIcon, Map as MapIcon, Play, Plus, Scale, Sparkles, Target, WandSparkles, Gauge } from 'lucide-react';
+import { Archive, ArchiveRestore, ArrowRight, CheckCircle2, FlaskConical, FolderPlus, ImageIcon, Lock, Map as MapIcon, Network, Plus, Sparkles, WandSparkles, Gauge } from 'lucide-react';
 import { useMe } from '../api/hooks';
+import { useFirstVisit } from '../hooks/useTheme';
 import { mutations, useApiMutation, useProjects } from '../api/hooks';
-import type { ProjectListItem } from '../api/types';
+import type { JourneyStageKey, ProjectListItem } from '../api/types';
+import { DuplicateButton } from '../components/Locked';
 import { PageWrap } from '../components/AppShell';
 import { Modal } from '../components/Overlay';
 import { useToast } from '../components/Toast';
-import { Badge, Button, Checkbox, EmptyState, ErrorState, Field, Input, PageHeader, SkeletonCard, StatusPill, Textarea, fadeUp, stagger } from '../components/ui';
+import { Badge, Button, Checkbox, EmptyState, ErrorState, Field, Input, PageHeader, SkeletonCard, Textarea, fadeUp, stagger } from '../components/ui';
 import { ApiError } from '../api/client';
-import { humanize, timeAgo } from '../lib/format';
-import { STAGES } from '../lib/labels';
+import { cn, timeAgo } from '../lib/format';
 
-const STAGE_LABEL = Object.fromEntries(STAGES.map((s) => [s.key, s.label]));
 
 export default function Projects() {
   const [archived, setArchived] = useState(false);
   const q = useProjects(archived);
   const [creating, setCreating] = useState(false);
   const items = q.data?.items ?? [];
+  const firstVisit = useFirstVisit('ll-dash-reveal');
   return (
     <PageWrap>
       <PageHeader
@@ -57,7 +58,7 @@ export default function Projects() {
           Start with a product and the country you plan to launch in.
         </EmptyState>
       )}
-      <motion.ul variants={stagger(0.07)} initial="hidden" animate="show" className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+      <motion.ul variants={stagger(0.07)} initial={firstVisit ? 'hidden' : false} animate="show" className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
         {items.map((p) => (
           <motion.li key={p.id} variants={fadeUp}>
             <ProjectCard p={p} />
@@ -83,87 +84,122 @@ export default function Projects() {
   );
 }
 
+const STAGE_ORDER: { key: JourneyStageKey; label: string }[] = [
+  { key: 'brief', label: 'Brief' },
+  { key: 'audience', label: 'Audience' },
+  { key: 'explore', label: 'Explore' },
+  { key: 'strategy', label: 'Strategy' },
+  { key: 'create', label: 'Create' },
+  { key: 'export', label: 'Export' },
+];
+const STATUS_TEXT: Record<string, string> = { done: 'complete', attention: 'needs attention', active: 'in progress', todo: 'not started' };
+
 function ProjectCard({ p }: { p: ProjectListItem }) {
   const toast = useToast();
+  const nav = useNavigate();
   const archive = useApiMutation((v: boolean) => mutations.patchProject(p.id, { archived: v }), [['projects']]);
-  const outputs = p.recent_outputs.filter((a) => a.mime_type.startsWith('image/') || a.kind === 'video_final');
+  const outputs = p.recent_outputs.filter((a) => a.mime_type.startsWith('image/')).slice(0, 3);
+  const j = p.journey;
+  const statusOf = (k: JourneyStageKey) => j?.stages.find((s) => s.key === k)?.status ?? 'todo';
+  const next = j?.next_action ?? null;
+  const locked = !!p.locked;
   return (
-    <article className="card card-hover group relative flex h-full flex-col overflow-hidden">
-      <div className="relative h-36 overflow-hidden bg-gradient-to-br from-[#FFE9DE] via-[#FFF6F1] to-[#E7F0FF] dark:from-brand-soft dark:via-surface2 dark:to-accent-soft">
-        {outputs.length > 0 ? (
-          <div className="grid h-full grid-cols-4 gap-1 p-1">
-            {outputs.slice(0, 4).map((a) =>
-              a.mime_type.startsWith('image/') ? (
-                <img key={a.id} src={a.url} alt={a.label || a.kind} loading="lazy" className="h-full w-full rounded-lg object-cover" />
-              ) : (
-                <div key={a.id} className="relative overflow-hidden rounded-lg bg-ink">
-                  <video src={`${a.url}#t=2`} muted preload="metadata" className="h-full w-full object-cover" aria-hidden />
-                  <span className="absolute inset-0 flex items-center justify-center">
-                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/90 shadow"><Play className="ml-0.5 h-3 w-3 fill-[#0E1320] text-[#0E1320]" /></span>
-                  </span>
-                </div>
-              ),
-            )}
-          </div>
-        ) : (
-          <div className="flex h-full items-center justify-center">
-            <div className="flex items-center gap-2 text-xs font-medium text-muted">
-              <ImageIcon className="h-4 w-4" /> No generated outputs yet
-            </div>
-          </div>
-        )}
-        <div className="absolute left-3 top-3 flex gap-1.5">
+    <article className="card group relative flex h-full flex-col overflow-hidden transition-shadow duration-200 hover:shadow-lift" data-testid={locked ? 'sample-card' : undefined}>
+      <div className="relative flex h-40 gap-1 overflow-hidden bg-gradient-to-br from-[#FFE9DE] via-[#FFF6F1] to-[#E7F0FF] p-1 dark:from-brand-soft dark:via-surface2 dark:to-accent-soft">
+        <div className="relative flex w-2/5 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white/70 dark:bg-surface">
+          {p.thumbnail_url ? (
+            <img src={p.thumbnail_url} alt={`${p.name} product photo`} className="h-full w-full object-contain p-2 transition-transform duration-200 group-hover:scale-[1.04] motion-reduce:transition-none motion-reduce:group-hover:scale-100" loading="lazy" />
+          ) : (
+            <span className="flex flex-col items-center gap-1 text-xs text-muted">
+              <ImageIcon className="h-5 w-5" /> No product photo
+            </span>
+          )}
+        </div>
+        <div className="grid min-w-0 flex-1 grid-cols-3 gap-1">
+          {outputs.map((a) => (
+            <img key={a.id} src={a.url} alt={`Generated ${a.kind}${a.preset ? ` (${a.preset})` : ''}`} loading="lazy" className="h-full w-full rounded-lg object-cover" />
+          ))}
+          {outputs.length === 0 && <div className="col-span-3 flex items-center justify-center rounded-lg text-xs text-muted">No ads generated yet</div>}
+        </div>
+        <div className="absolute left-3 top-3 flex flex-wrap gap-1.5">
           {p.is_demo && <Badge tone="brand" icon={<Sparkles className="h-3 w-3" />}>Sample · synthetic</Badge>}
+          {locked && <Badge tone="accent" icon={<Lock className="h-3 w-3" />}>Read-only</Badge>}
           {p.archived && <Badge>Archived</Badge>}
         </div>
       </div>
       <div className="flex flex-1 flex-col p-5">
-        <div className="flex items-start justify-between gap-2">
-          <h2 className="font-display text-[17px] font-bold leading-snug">
-            <Link to={`/projects/${p.id}`} className="after:absolute after:inset-0 focus:outline-none">
-              {p.name}
-            </Link>
-          </h2>
-          <ArrowUpRight className="h-4 w-4 shrink-0 text-subtle transition group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-fg" />
-        </div>
+        <h2 className="font-display text-[17px] font-bold leading-snug">
+          <Link to={`/projects/${p.id}`} className="hover:underline">
+            {p.name}
+          </Link>
+        </h2>
         <p className="mt-1.5 line-clamp-2 text-[13.5px] text-muted">{p.goal || 'No goal written yet.'}</p>
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <StatusPill status={p.status} label={humanize(p.status)} />
-          <Badge tone="neutral">
-            {p.country_code} · {p.currency}
-          </Badge>
-          <Badge tone="accent" icon={<Target className="h-3 w-3" />}>
-            {p.strategies} strateg{p.strategies === 1 ? 'y' : 'ies'}
-          </Badge>
-        </div>
-        <div className="mt-auto pt-4">
-          <div className="flex items-center justify-between gap-2 border-t border-line pt-3 text-[12.5px]">
-            {p.last_run ? (
-              <span className="flex min-w-0 items-center gap-2 text-muted">
-                <StatusPill status={p.last_run.status} />
-                <span className="truncate">{STAGE_LABEL[p.last_run.stage] ?? humanize(p.last_run.stage)}</span>
-              </span>
+        <div className="mt-4">
+          <ol className="flex items-center gap-1" aria-label="Journey progress">
+            {STAGE_ORDER.map((s) => {
+              const st = statusOf(s.key);
+              return (
+                <li key={s.key} className="flex-1" title={`${s.label}: ${STATUS_TEXT[st]}`}>
+                  <span className={cn('block h-1.5 rounded-full', st === 'done' ? 'bg-ok' : st === 'active' ? 'bg-accent' : st === 'attention' ? 'bg-warn' : 'bg-line')} />
+                  <span className="mt-1 block text-center text-[10px] text-subtle">
+                    {st === 'done' ? '✓ ' : st === 'attention' ? '! ' : st === 'active' ? '… ' : ''}
+                    {s.label}
+                    <span className="sr-only"> — {STATUS_TEXT[st]}</span>
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+          <p className="mt-2 text-[12.5px] text-muted">
+            {j?.last_completed ? (
+              <>
+                <CheckCircle2 className="mr-1 inline h-3.5 w-3.5 text-ok" aria-hidden />
+                Last completed: <b className="text-fg">{j.last_completed}</b>
+              </>
             ) : (
-              <span className="text-subtle">No research run yet</span>
+              'Not started yet'
             )}
-            <span className="shrink-0 text-subtle">updated {timeAgo(p.updated_at)}</span>
-          </div>
+            {p.last_run && <span className="text-subtle"> · research {p.last_run.status.replace(/_/g, ' ')}</span>}
+            <span className="text-subtle"> · updated {timeAgo(p.updated_at)}</span>
+          </p>
         </div>
+        <div className="mt-auto flex flex-wrap items-center gap-2 pt-4">
+          {locked ? (
+            <>
+              <Button variant="primary" className="flex-1" onClick={() => nav(`/projects/${p.id}`)} aria-label={`Open sample: ${p.name}`}>
+                Open sample <ArrowRight className="h-4 w-4" />
+              </Button>
+              <DuplicateButton pid={p.id} variant="outline" size="md" />
+            </>
+          ) : (
+            <>
+              <Button
+                variant="primary"
+                className="flex-1"
+                onClick={() => nav(next?.to ?? `/projects/${p.id}`)}
+                aria-label={`Continue ${p.name}${next ? `: ${next.label}` : ''}`}
+              >
+                <span className="truncate">Continue{next ? ` · ${next.label}` : ''}</span> <ArrowRight className="h-4 w-4 shrink-0" />
+              </Button>
+              <button
+                type="button"
+                onClick={() =>
+                  archive.mutate(!p.archived, {
+                    onSuccess: () => toast.success(p.archived ? 'Project restored' : 'Project archived', p.archived ? undefined : 'Nothing is deleted; show archived projects to restore it.'),
+                    onError: (e) => toast.error('Could not update project', e),
+                  })
+                }
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-line text-muted transition hover:bg-surface2 hover:text-fg [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11"
+                aria-label={p.archived ? `Restore ${p.name}` : `Archive ${p.name}`}
+                title={p.archived ? 'Restore' : 'Archive'}
+              >
+                {p.archived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
+              </button>
+            </>
+          )}
+        </div>
+        {next && !locked && <p className="mt-2 line-clamp-2 text-[11.5px] text-subtle">{next.why}</p>}
       </div>
-      <button
-        type="button"
-        onClick={() =>
-          archive.mutate(!p.archived, {
-            onSuccess: () => toast.success(p.archived ? 'Project restored' : 'Project archived', p.archived ? undefined : 'Nothing is deleted; show archived projects to restore it.'),
-            onError: (e) => toast.error('Could not update project', e),
-          })
-        }
-        className="absolute right-3 top-3 z-10 rounded-lg bg-surface/90 p-1.5 text-muted opacity-0 shadow-card transition hover:text-fg focus:opacity-100 group-hover:opacity-100"
-        aria-label={p.archived ? `Restore ${p.name}` : `Archive ${p.name}`}
-        title={p.archived ? 'Restore' : 'Archive'}
-      >
-        {p.archived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
-      </button>
     </article>
   );
 }
@@ -239,10 +275,10 @@ function JuryTour({ pid }: { pid: string }) {
   const me = useMe().data;
   const steps = [
     { to: `/projects/${pid}`, icon: Sparkles, t: 'Overview', d: 'Run timeline & decisions' },
+    { to: `/projects/${pid}/audiences#taste-story`, icon: Network, t: 'Why these places?', d: 'Interests → Qloo → placement → ad' },
+    { to: `/projects/${pid}/compare?view=impact`, icon: FlaskConical, t: 'What Qloo changed', d: 'Baseline vs taste-informed' },
     { to: `/projects/${pid}/explorer`, icon: MapIcon, t: 'Market explorer', d: 'Map, places, evidence' },
-    { to: `/projects/${pid}/compare`, icon: Scale, t: 'Compare', d: 'Chennai excluded — why' },
-    { to: `/projects/${pid}/strategy`, icon: Target, t: 'Strategy', d: 'Hypotheses & placements' },
-    { to: `/projects/${pid}/studio`, icon: WandSparkles, t: 'Ad studio', d: 'Bengali flyers & video' },
+    { to: `/projects/${pid}/studio`, icon: WandSparkles, t: 'Why this message?', d: 'Copy traced to evidence' },
     { to: `/projects/${pid}/settings`, icon: Gauge, t: 'Status', d: 'Honest provider state' },
   ];
   return (
@@ -256,7 +292,15 @@ function JuryTour({ pid }: { pid: string }) {
       <div aria-hidden className="absolute -bottom-24 right-0 h-72 w-72 animate-mesh rounded-full bg-[#1F6FEB]/35 blur-[90px] [animation-delay:-6s]" />
       <div className="relative">
         <p className="text-[12px] font-bold uppercase tracking-[0.16em] text-[#FFB088]">Welcome{me ? `, ${me.user.display_name}` : ''}</p>
-        <h2 className="mt-2 font-display text-2xl font-extrabold tracking-tight sm:text-3xl">A six-stop tour of the sample launch</h2>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-4">
+          <h2 className="font-display text-2xl font-extrabold tracking-tight sm:text-3xl">A six-stop tour of the sample launch</h2>
+          <Link
+            to={`/projects/${pid}`}
+            className="inline-flex h-12 items-center gap-2 rounded-xl bg-gradient-to-b from-[#FF8A5B] to-[#FF6A2F] px-5 text-[15px] font-semibold text-[#1A0E08] shadow-[0_14px_30px_-10px_rgb(255_106_47/0.75)] transition hover:brightness-105"
+          >
+            Open the sample project <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
         <p className="mt-1.5 max-w-2xl text-sm text-white/65">Everything below is live data from the backend: research runs, evidence, strategies and real xAI flyers and videos. Synthetic product specs are labelled as such.</p>
         <ol className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
           {steps.map((s, i) => (

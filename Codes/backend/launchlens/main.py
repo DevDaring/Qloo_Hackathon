@@ -7,13 +7,14 @@ from __future__ import annotations
 import mimetypes
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import errors
-from .api import routes_creative, routes_project, routes_research
+from .api import routes_creative, routes_insight, routes_project, routes_research
+from .api.deps import guard_locked
 from .config import CODES_DIR, settings
 from .security import configure_logging
 
@@ -40,9 +41,11 @@ async def security_headers(request: Request, call_next):
     return response
 
 
-app.include_router(routes_project.router)
-app.include_router(routes_research.router)
-app.include_router(routes_creative.router)
+_guard = [Depends(guard_locked)]
+app.include_router(routes_project.router, dependencies=_guard)
+app.include_router(routes_research.router, dependencies=_guard)
+app.include_router(routes_creative.router, dependencies=_guard)
+app.include_router(routes_insight.router, dependencies=_guard)
 app.include_router(routes_creative.health)
 
 DIST = CODES_DIR / "frontend" / "dist"

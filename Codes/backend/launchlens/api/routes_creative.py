@@ -8,6 +8,7 @@ import csv
 import io
 import time
 import uuid
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, UploadFile
@@ -588,9 +589,12 @@ async def providers_status(refresh: bool = False, p: Principal = Depends(current
         "limits": {"max_run_cost_usd": str(settings.MAX_RUN_COST_USD), "max_daily_cost_usd": str(settings.MAX_DAILY_COST_USD),
                    "demo_daily_cost_usd": str(settings.DEMO_DAILY_COST_USD), "max_video_seconds": settings.MAX_VIDEO_SECONDS,
                    "max_assets_per_batch": settings.MAX_ASSETS_PER_BATCH, "max_research_calls": settings.MAX_RESEARCH_CALLS},
+        "checked_at": datetime.now(UTC).isoformat(),
         "legend": {"configured": "a credential is present", "reachable": "the provider answered",
                    "authorized": "the credential was accepted", "operations": "verified per operation"},
     }
+    from ..services import plainstatus
+    data["plain"] = plainstatus.build(data, data["checked_at"])
     _status_cache.update(at=time.time(), data=data)
     return data
 

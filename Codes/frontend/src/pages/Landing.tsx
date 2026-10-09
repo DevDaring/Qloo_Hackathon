@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { motion, useMotionValueEvent, useScroll } from 'framer-motion';
+import { motion, useMotionValueEvent, useReducedMotion, useScroll } from 'framer-motion';
 import {
   ArrowRight,
   BadgeCheck,
@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { usePublicConfig } from '../api/hooks';
 import { IntroFallback } from '../components/intro/IntroFallback';
-import { Starfield } from '../components/intro/IntroOverlays';
+import { GlobePoster, Starfield } from '../components/intro/IntroOverlays';
 import { Reveal, RevealLi, useReveal } from '../components/Reveal';
 import { Logo } from '../components/Logo';
 import { EVIDENCE_BADGES } from '../lib/labels';
@@ -128,14 +128,12 @@ function HeroVisual() {
 }
 
 function PlaceholderGlobe() {
-  return (
-    <div className="pointer-events-none absolute inset-0 flex items-center justify-center lg:pl-[40%]" aria-hidden>
-      <div className="aspect-square w-[62%] max-w-[520px] rounded-full bg-[radial-gradient(circle_at_35%_30%,#2B5BBF_0%,#11224A_45%,#070C1C_75%)] shadow-[0_0_120px_20px_rgba(43,91,191,0.35)] lg:w-[48%]" />
-    </div>
-  );
+  return <GlobePoster />;
 }
 
 function Hero() {
+  // reduced motion: everything in the hero is rendered in place immediately
+  const still = useReducedMotion();
   return (
     <section id="hero" className="relative isolate flex flex-col overflow-hidden bg-[#060A14] pt-16 text-white lg:block lg:h-[100svh] lg:max-h-[1000px] lg:min-h-[760px] lg:pt-0">
       <Starfield />
@@ -151,12 +149,12 @@ function Hero() {
       <div className="pointer-events-none relative z-10 mx-auto w-full max-w-7xl px-4 pb-14 sm:px-6 lg:flex lg:h-full lg:items-center lg:pb-0">
         <div className="pointer-events-auto lg:max-w-[560px]">
           <motion.div
-            initial={{ opacity: 0, y: 10 }}
+            initial={still ? false : { opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
             className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.06] py-1 pl-1 pr-3 text-[12.5px] font-medium text-white/75 backdrop-blur"
           >
-            <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-[#0E1320]">Qloo LLM Hackathon</span>
+            <span className="shrink-0 whitespace-nowrap rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-[#0E1320]">Qloo Agentic Hackathon</span>
             Launch planning with visible evidence
           </motion.div>
           <h1 className="font-display text-[40px] font-extrabold leading-[1.04] tracking-[-0.03em] sm:text-6xl lg:text-[62px]">
@@ -164,7 +162,7 @@ function Hero() {
               <motion.span
                 key={line}
                 className="block"
-                initial={{ opacity: 0, y: 28, filter: 'blur(8px)' }}
+                initial={still ? false : { opacity: 0, y: 28, filter: 'blur(8px)' }}
                 animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
                 transition={{ delay: 0.1 + i * 0.12, duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
               >
@@ -173,7 +171,7 @@ function Hero() {
             ))}
             <motion.span
               className="block bg-gradient-to-r from-[#FF8A5B] via-[#FF6F91] to-[#7FB2FF] bg-clip-text pb-1 text-transparent"
-              initial={{ opacity: 0, y: 28, filter: 'blur(8px)' }}
+              initial={still ? false : { opacity: 0, y: 28, filter: 'blur(8px)' }}
               animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
               transition={{ delay: 0.36, duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
             >
@@ -181,15 +179,15 @@ function Hero() {
             </motion.span>
           </h1>
           <motion.p
-            initial={{ opacity: 0, y: 14 }}
+            initial={still ? false : { opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.55, duration: 0.7 }}
+            transition={{ delay: 0.2, duration: 0.5 }}
             className="mt-6 max-w-xl text-[17px] leading-relaxed text-white/70"
           >
             LaunchLens turns a product brief into a launch plan — from global taste signals down to the cities, people and placements that matter — then produces audience-specific
             flyers and video ads. Every recommendation links to evidence you can inspect.
           </motion.p>
-          <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7, duration: 0.7 }} className="mt-8 flex flex-wrap items-center gap-3">
+          <motion.div initial={still ? false : { opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25, duration: 0.45 }} className="mt-8 flex flex-wrap items-center gap-3">
             <Link
               to="/login"
               className="group inline-flex h-12 items-center gap-2 rounded-xl bg-gradient-to-b from-[#FF8A5B] to-[#FF6A2F] px-6 text-[15px] font-semibold text-[#1A0E08] shadow-[0_1px_0_rgb(255_255_255/0.35)_inset,0_14px_30px_-10px_rgb(255_106_47/0.75)] transition hover:brightness-105 active:scale-[0.97]"
@@ -401,6 +399,7 @@ function Footer() {
         <Logo />
         <p className="max-w-xl text-[13px] text-muted">
           Recommendations are planning aids, not guarantees. No ads are bought or sent automatically.
+          <span className="mt-1 block text-[11.5px] text-subtle">Built for the Qloo Agentic Hackathon.</span>
           <span className="mt-1 block text-[11.5px] text-subtle">Illustrations of people: AI-generated (xAI). Ads shown are real outputs from the synthetic sample project. Globe imagery: NASA Blue Marble &amp; Black Marble (NASA EOSDIS GIBS); map data © OpenStreetMap contributors · OpenFreeMap.</span>
         </p>
         <p className="text-xs text-subtle">Map data © OpenStreetMap contributors</p>

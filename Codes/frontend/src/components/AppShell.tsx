@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import { Link, NavLink, Navigate, Outlet, useLocation, useMatch, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -28,6 +28,7 @@ import { mutations, useMe, useProjects } from '../api/hooks';
 import { cn } from '../lib/format';
 import { useOnline, useTheme } from '../hooks/useTheme';
 import { Logo } from './Logo';
+import { useDialog } from './Overlay';
 import { Badge, ErrorState, Skeleton } from './ui';
 
 export const PROJECT_NAV = [
@@ -87,6 +88,8 @@ export function AuthGate() {
 
 function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const closeDrawer = useCallback(() => setMobileOpen(false), []);
+  const drawerRef = useDialog(mobileOpen, closeDrawer); // Escape, focus trap and focus restore
   const loc = useLocation();
   const online = useOnline();
   useEffect(() => setMobileOpen(false), [loc.pathname]);
@@ -105,6 +108,9 @@ function AppShell() {
           <div className="fixed inset-0 z-[70] lg:hidden">
             <motion.div className="absolute inset-0 bg-[#0E1320]/40" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setMobileOpen(false)} />
             <motion.aside
+              ref={drawerRef}
+              role="dialog"
+              aria-modal="true"
               initial={{ x: -300 }}
               animate={{ x: 0 }}
               exit={{ x: -300 }}
@@ -162,6 +168,12 @@ function Sidebar() {
   const nav = useNavigate();
   const qc = useQueryClient();
   const [switcher, setSwitcher] = useState(false);
+  useEffect(() => {
+    if (!switcher) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setSwitcher(false);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [switcher]);
 
   return (
     <div className="flex h-full flex-col">

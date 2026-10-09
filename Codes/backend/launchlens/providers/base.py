@@ -76,13 +76,16 @@ def classify(provider: str, resp: httpx.Response) -> ProviderError:
 
 async def request(provider: str, method: str, url: str, *, headers: dict | None = None, params: Any = None,
                   json: Any = None, timeout: float = 30.0, attempts: int = 3, paid: bool = False,
-                  client: httpx.AsyncClient | None = None) -> httpx.Response:
-    """One HTTP call with bounded retries. Returns the 2xx response."""
+                  client: httpx.AsyncClient | None = None, stats: dict | None = None) -> httpx.Response:
+    """One HTTP call with bounded retries. Returns the 2xx response. If `stats`
+    is given, stats["physical_attempts"] counts every network attempt."""
     last: ProviderError | None = None
     own = client is None
     client = client or httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=min(15.0, timeout)))
     try:
         for attempt in range(1, attempts + 1):
+            if stats is not None:
+                stats["physical_attempts"] = stats.get("physical_attempts", 0) + 1
             try:
                 resp = await client.request(method, url, headers=headers, params=params, json=json)
             except (httpx.ReadTimeout, httpx.WriteTimeout, httpx.RemoteProtocolError) as e:

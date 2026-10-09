@@ -30,10 +30,11 @@ The key claim LaunchLens demonstrates is **"Qloo changes a decision for a tracea
 | Stage | How Qloo is used |
 |---|---|
 | Audience interests | Voluntary interests (e.g. *cricket, Rabindra Sangeet, street food*) are resolved with `/search` and `/v2/tags`. Ambiguous matches pause the agent for a human choice or an explicit proxy with a stated reason. Localities, destinations and venues are never accepted as taste signals. A missing entity is never replaced silently. |
-| Location ranking | Hard constraints come first (service coverage, budget, distribution). Cultural fit comes from Qloo Insights place affinity for each audience's resolved signals. Practical and cultural components are shown separately, and missing components leave an index *incomplete* rather than renormalised. |
+| Location ranking | Hard constraints come first (service coverage, budget, distribution). Cultural fit is a **taste lift**: one common Qloo query over all candidate cities with the audience's signals, compared with the same query without signals. A city that appears more often among taste-matched places than in the baseline gets a positive log2 lift. Sparse cities are labelled, and missing components leave an index *incomplete* rather than renormalised. |
 | Venue and partner shortlist | Qloo place-category tags (pharmacies, hospitals, malls, community and senior centres, physiotherapists, mobility and medical suppliers) are ranked by affinity per audience. Suitability = category fit + proximity + rank-normalised Qloo affinity. |
 | Taste layer | A Qloo heatmap (`urn:heatmap`) on the map, labelled *relative within this query only — not demand*. |
-| Experiment | A built-in **with/without-Qloo** comparison holds product, constraints, audiences and practical evidence constant. It shows what Qloo changed in rankings and in the venue shortlist. |
+| "Why this place?" | A taste-to-campaign story per audience and city: interests → Qloo recommendations → shortlisted place → campaign hypothesis → creative. Where Qloo explainability attributes a recommendation to an input, that edge is drawn with its evidence; otherwise the place is shown as "recommended for this combined interest set", with no invented weights. Model-written hypotheses are labelled as generated. |
+| Experiment ("See what Qloo changed") | The with/without-Qloo comparison starts from the baseline run's frozen inputs and copies its practical evidence, then verifies per-city fingerprints. Edits after the baseline cannot leak in, and an invalid comparison says so. It reports ranking changes, venue discovery and creative emphasis separately, with blind A/B ratings, and says plainly when there is no material change. |
 
 Qloo affinity is always presented with its provider meaning. It is a relative taste relationship, never demand,
 footfall, purchase probability or a disability signal. Raw Qloo responses stay server-side and are never exported.
@@ -66,10 +67,17 @@ footfall, purchase probability or a disability signal. Raw Qloo responses stay s
     hi/bn).
   - A vision fidelity gate rejects generated imagery that shows things it must not before any video money is
     spent.
+- **Explanations:** "Why this place?" taste story, two-audience comparison on the same city and inputs, "Why this
+  message?" creative trace back to product facts, strategy and evidence, a *Pilot hypothesis* card (planned, never
+  shown as a result), and up to three underexplored opportunities (affinity and popularity shown separately).
+- **Guided journey:** Brief → Audience → Explore → Strategy → Create → Export on every page, with blockers that link
+  to the exact field or decision and one next action.
+- **Read-only jury sample:** the sample project is locked so every visitor sees the same results. **Duplicate to
+  edit** copies its inputs and decisions into your own project; research re-runs cheaply from cache.
 - **Exports:** a campaign zip with strategy, evidence summary, placement shortlist and brief, outreach *draft*
   (never sent), creative and subtitles, plus a manifest with a SHA-256 for every file.
-- **Revisions:** exclude a city, change the budget, remove a feature, or change an audience's role. Only the
-  affected outputs go stale, previous versions are kept, and a "what changed" diff is shown.
+- **Revisions:** exclude a city, change the budget, remove a feature, or change an audience's role. A dry-run
+  preview lists exactly what would go stale before anything is applied. Only the affected outputs go stale, previous versions are kept, and a "what changed" diff is shown.
 - **Cost controls:** reserve-then-settle accounting with per-job, per-run, per-workspace and daily caps, provider-
   reported actual costs, and a paid-attempt ledger. A crash never pays twice for the same request; ambiguous
   submissions require reconciliation.
@@ -190,6 +198,11 @@ The offline tests cover the core guarantees:
 - Tenant isolation, and no secrets in responses or exports.
 - Concurrent cost caps.
 - Crash recovery without paying twice.
+- Experiments: baseline from another project or without taste evidence is refused; edits after the baseline do
+  not change the experiment; swapped city evidence is detected; blind ratings stay blind until both are rated.
+- Taste story: per-input Qloo attribution only when Qloo provides it, otherwise the combined-set fallback; every
+  provider edge resolves to project evidence.
+- The locked sample refuses edits but allows export and duplication.
 - Reconciliation of ambiguous submissions.
 - Selective invalidation.
 - Export manifest integrity.

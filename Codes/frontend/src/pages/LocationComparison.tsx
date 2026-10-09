@@ -2,15 +2,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { ArrowRight, Beaker, CheckCircle2, CircleHelp, GitCompareArrows, History, Info, OctagonX, RotateCcw, Scale, Star, XCircle } from 'lucide-react';
-import { mutations, pickDefaultRun, useApiMutation, useAudiences, useExperiment, useExperiments, useRevisions, useRun, useRunDiff, useRuns } from '../api/hooks';
+import { ArrowRight, CheckCircle2, CircleHelp, Eye, GitCompareArrows, History, Info, OctagonX, RotateCcw, Scale, Sparkles, XCircle } from 'lucide-react';
+import { mutations, pickDefaultRun, useAudiences, useRevisions, useRun, useRunDiff, useRuns, type RevisionBody } from '../api/hooks';
+import { QlooImpact } from '../components/QlooImpact';
+import { RevisionPreviewSheet } from '../components/RevisionPreview';
 import type { Assessment, Component } from '../api/types';
 import { PageWrap } from '../components/AppShell';
 import { EvidenceChip } from '../components/Evidence';
 import { SERIES } from '../components/ExplorerCharts';
-import { ConfirmDialog } from '../components/Overlay';
 import { useProjectCtx } from '../components/ProjectContext';
-import { useToast } from '../components/Toast';
 import {
   Badge,
   Button,
@@ -28,11 +28,12 @@ import {
   SkeletonCard,
   StatusPill,
   Table,
+  Tabs,
   Td,
   Th,
   Tooltip,
 } from '../components/ui';
-import { cn, fmtDate, fmtPct, humanize, shortId, timeAgo } from '../lib/format';
+import { cn, fmtPct, humanize, shortId, timeAgo } from '../lib/format';
 import { ROLE_LABEL } from '../lib/labels';
 
 const COMP_COLOR: Record<string, string> = {
@@ -45,10 +46,11 @@ const COMP_COLOR: Record<string, string> = {
 const COMP_ORDER = ['partner_access', 'venue_access', 'feature_relevance', 'competitive_room', 'cultural_fit'];
 
 export default function LocationComparison() {
-  const { pid } = useProjectCtx();
+  const { pid, sel, setSel } = useProjectCtx();
   const [params, setParams] = useSearchParams();
   const runs = useRuns(pid);
-  const runId = pickDefaultRun(runs.data?.items, params.get('run'))?.id;
+  const runId = pickDefaultRun(runs.data?.items, params.get('run') ?? sel.runId)?.id;
+  const view: 'locations' | 'impact' = params.get('view') === 'impact' || (typeof window !== 'undefined' && window.location.hash === '#qloo-impact') ? 'impact' : 'locations';
   const rd = useRun(runId);
   const all = rd.data?.assessments ?? [];
   const [areaIds, setAreaIds] = useState<string[]>([]);
@@ -77,7 +79,12 @@ export default function LocationComparison() {
         actions={
           <>
             <label htmlFor="cmp-run" className="sr-only">Research run</label>
-            <Select id="cmp-run" className="h-10 w-auto min-w-[220px]" value={runId ?? ''} onChange={(e) => setParams({ run: e.target.value })}>
+            <Select id="cmp-run" className="h-10 w-auto min-w-[220px]" value={runId ?? ''} onChange={(e) => {
+                const next = new URLSearchParams(params);
+                next.set('run', e.target.value);
+                setParams(next);
+                setSel({ runId: e.target.value });
+              }}>
               {(runs.data?.items ?? []).map((r) => (
                 <option key={r.id} value={r.id}>
                   Run {shortId(r.id)} · {r.status.replace(/_/g, ' ')}
@@ -89,6 +96,25 @@ export default function LocationComparison() {
         }
       />
 
+      <div className="scroll-thin -mx-1 mb-6 overflow-x-auto px-1">
+      <Tabs<'locations' | 'impact'>
+        value={view}
+        onChange={(v) => {
+          const next = new URLSearchParams(params);
+          if (v === 'impact') next.set('view', 'impact');
+          else next.delete('view');
+          setParams(next, { replace: true });
+        }}
+        tabs={[
+          { key: 'locations', label: 'Compare locations', icon: <Scale className="h-3.5 w-3.5" /> },
+          { key: 'impact', label: 'See what Qloo changed', icon: <Sparkles className="h-3.5 w-3.5" /> },
+        ]}
+      />
+      </div>
+      {view === 'impact' ? (
+        <QlooImpact runId={runId} qlooRun={rd.data?.run.qloo_enabled} />
+      ) : (
+      <>
       <Callout tone="accent" icon={<Info className="h-4 w-4 text-accent-ink" />} title="Planning index, not a forecast; coverage is completeness, not confidence." className="mb-6">
         Indices are rank-based (0–1) application planning indices over the weight that has evidence. An incomplete index shows its available weight and is not directly comparable with a complete one.
       </Callout>
@@ -138,10 +164,11 @@ export default function LocationComparison() {
       )}
 
       <div className="mt-8 grid gap-6">
-        <ExperimentPanel runId={runId} qloo={rd.data?.run.qloo_enabled} />
         <DiffPanel runId={runId} />
       </div>
       <RevisionPanel candidates={all.map((a) => a.area_name)} />
+      </>
+      )}
     </PageWrap>
   );
 }
@@ -365,13 +392,32 @@ function CompCell({ c, audName }: { c?: Component; audName: Record<string, strin
       </span>
       {c.by_audience && typeof c.by_audience === 'object' ? (
         <span className="mt-1 flex flex-col items-end gap-0.5">
-          {Object.entries(c.by_audience as Record<string, number | null>).map(([id, v]) => (
-            <span key={id} className="inline-flex items-center gap-1.5 text-[11px]">
-              <span className="max-w-[160px] truncate text-muted" title={audName[id]}>{audName[id] ?? id.slice(0, 6)}</span>
-              {v == null ? <span className="text-subtle">unknown</span> : <b className="num text-violet-700 dark:text-violet-300">{v.toFixed(2)}</b>}
-            </span>
-          ))}
-          <span className="text-[10px] text-subtle">Qloo affinity · not demand</span>
+          {Object.entries(c.by_audience as Record<string, unknown>).map(([id, raw]) => {
+            // older runs store a mean affinity number per audience; newer runs store the city taste lift
+            const v = raw as number | null | { lift?: number | null; state?: string; n_signal?: number | null; n_baseline?: number | null };
+            const isObj = v != null && typeof v === 'object';
+            return (
+              <span key={id} className="inline-flex items-center gap-1.5 text-[11px]">
+                <span className="max-w-[160px] truncate text-muted" title={audName[id]}>{audName[id] ?? id.slice(0, 6)}</span>
+                {v == null ? (
+                  <span className="text-subtle">unknown</span>
+                ) : isObj ? (
+                  v.lift != null ? (
+                    <b className="num text-violet-700 dark:text-violet-300" title={`${v.n_signal ?? '?'} recommended vs ${v.n_baseline ?? '?'} baseline places`}>
+                      {v.lift.toFixed(2)}×
+                    </b>
+                  ) : (
+                    <span className="text-subtle">{humanize(v.state ?? 'unknown')}</span>
+                  )
+                ) : typeof v === 'number' ? (
+                  <b className="num text-violet-700 dark:text-violet-300">{v.toFixed(2)}</b>
+                ) : (
+                  <span className="text-subtle">unknown</span>
+                )}
+              </span>
+            );
+          })}
+          <span className="text-[10px] text-subtle">{Object.values(c.by_audience as Record<string, unknown>).some((x) => x != null && typeof x === 'object') ? 'Qloo taste lift per audience · not demand' : 'Qloo affinity · not demand'}</span>
         </span>
       ) : null}
       {c.evidence_ids?.length ? <EvidenceChip ids={c.evidence_ids} title={c.label} label="src" className="mt-0.5" /> : null}
@@ -380,148 +426,6 @@ function CompCell({ c, audName }: { c?: Component; audName: Record<string, strin
 }
 
 /* ------------------------------------------------------------------ experiment */
-function ExperimentPanel({ runId, qloo }: { runId?: string; qloo?: boolean }) {
-  const { pid, setConsoleRunId } = useProjectCtx();
-  const list = useExperiments(pid);
-  const [eid, setEid] = useState<string | null>(null);
-  const cur = eid ?? list.data?.items[0]?.id ?? null;
-  const ex = useExperiment(cur);
-  const [confirm, setConfirm] = useState(false);
-  const toast = useToast();
-  const create = useApiMutation(() => mutations.createExperiment(pid, runId!), [['experiments', pid], ['project', pid], ['runs', pid]]);
-  const rate = useApiMutation((r: Record<string, number>) => mutations.rateExperiment(cur!, r), [['experiment', cur]]);
-  const d = ex.data;
-  return (
-    <Card>
-      <CardHeader
-        icon={<Beaker className="h-4 w-4" />}
-        title="Compare with / without Qloo"
-        subtitle="Same product, constraints, audiences, practical evidence and model — only Qloo taste signals are withheld."
-        action={
-          <Button size="sm" variant="outline" disabled={!runId || qloo === false} onClick={() => setConfirm(true)}>
-            New experiment
-          </Button>
-        }
-      />
-      <div className="space-y-4 p-5">
-        {(list.data?.items.length ?? 0) > 1 && (
-          <Select aria-label="Experiment" value={cur ?? ''} onChange={(e) => setEid(e.target.value)} className="h-9 py-1 text-sm">
-            {list.data!.items.map((x) => (
-              <option key={x.id} value={x.id}>
-                Experiment {shortId(x.id)} · {fmtDate(x.created_at)}
-              </option>
-            ))}
-          </Select>
-        )}
-        {!cur && !list.isLoading && <EmptyState title="No experiment yet">Run the same workflow without Qloo to see what taste signals change. It reuses cached practical evidence.</EmptyState>}
-        {ex.isLoading && <SkeletonCard lines={4} />}
-        {ex.error && <ErrorState error={ex.error} onRetry={() => ex.refetch()} />}
-        {d && (
-          <>
-            <div className="flex flex-wrap gap-1.5 text-xs">
-              <Badge tone="violet">Varied: {d.conditions.varied}</Badge>
-              <Badge tone={d.practical_evidence_identical ? 'ok' : 'warn'}>{d.practical_evidence_identical ? 'Practical evidence identical' : 'Practical evidence differs'}</Badge>
-            </div>
-            <p className="text-xs text-muted">Held constant: {d.conditions.held_constant.join(', ')}.</p>
-            <Table caption="Locations with and without Qloo">
-              <thead>
-                <tr>
-                  <Th>Location</Th>
-                  <Th>With Qloo</Th>
-                  <Th>Without Qloo</Th>
-                  <Th>Hard constraints</Th>
-                  <Th>Your rating</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {d.locations.map((l) => (
-                  <tr key={l.area}>
-                    <Td className="font-semibold">{l.area}</Td>
-                    <Td className="text-xs"><StateCell x={l.with_qloo} /></Td>
-                    <Td className="text-xs">{l.without_qloo ? <StateCell x={l.without_qloo} /> : <span className="text-subtle">pending</span>}</Td>
-                    <Td>{l.hard_constraints_identical ? <Badge tone="ok">identical</Badge> : <Badge tone="warn">differ / pending</Badge>}</Td>
-                    <Td>
-                      <span className="inline-flex" role="radiogroup" aria-label={`Rate relevance of ${l.area}`}>
-                        {[1, 2, 3, 4, 5].map((n) => (
-                          <button
-                            key={n}
-                            role="radio"
-                            aria-checked={(d.owner_ratings?.[l.area] ?? 0) === n}
-                            aria-label={`${n} of 5`}
-                            onClick={() => rate.mutate({ [l.area]: n })}
-                            className="p-0.5"
-                          >
-                            <Star className={cn('h-4 w-4', (d.owner_ratings?.[l.area] ?? 0) >= n ? 'fill-amber-400 text-amber-500' : 'text-line')} />
-                          </button>
-                        ))}
-                      </span>
-                    </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {(['with_qloo', 'without_qloo'] as const).map((k) => (
-                <div key={k} className="rounded-xl border border-line p-3 text-[13px]">
-                  <p className="font-semibold">{k === 'with_qloo' ? 'With Qloo' : 'Without Qloo'}</p>
-                  <p className="text-muted">
-                    {d.strategies[k].strategies} strategies · {d.strategies[k].unsupported_claims_removed} unsupported claims removed
-                  </p>
-                  <p className="text-muted">Main features: {d.strategies[k].main_features.join(', ') || '—'}</p>
-                </div>
-              ))}
-            </div>
-            {(d.placement_changes.only_with_qloo.length > 0 || d.placement_changes.only_without_qloo.length > 0) && (
-              <div className="grid gap-3 sm:grid-cols-2" data-testid="placement-changes">
-                {(
-                  [
-                    ['only_with_qloo', 'Placements only with Qloo', 'violet'],
-                    ['only_without_qloo', 'Placements only without Qloo', 'neutral'],
-                  ] as const
-                ).map(([k, title, tone]) => (
-                  <div key={k} className="rounded-xl border border-line p-3">
-                    <p className="mb-1.5 text-[13px] font-semibold">
-                      {title} <Badge tone={tone}>{d.placement_changes[k].length}</Badge>
-                    </p>
-                    <div className="flex max-h-40 flex-wrap gap-1 overflow-y-auto">
-                      {d.placement_changes[k].map((n) => (
-                        <Badge key={n} tone={tone}>{n}</Badge>
-                      ))}
-                      {d.placement_changes[k].length === 0 && <span className="text-xs text-subtle">none</span>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            <ul className="list-disc space-y-0.5 pl-5 text-xs text-subtle">{d.notes.map((n) => <li key={n}>{n}</li>)}</ul>
-          </>
-        )}
-      </div>
-      <ConfirmDialog
-        open={confirm}
-        onClose={() => setConfirm(false)}
-        title="Start a without-Qloo comparison run?"
-        confirmLabel="Start experiment"
-        loading={create.isPending}
-        onConfirm={() =>
-          create.mutate(undefined, {
-            onSuccess: (r) => {
-              setEid(r.experiment_id);
-              setConsoleRunId(r.run.id);
-              setConfirm(false);
-              toast.success('Experiment started', 'A second research run without Qloo is in progress.');
-            },
-            onError: (e) => toast.error('Could not start experiment', e),
-          })
-        }
-      >
-        A second research run starts with Qloo taste signals withheld, using the run you are viewing as the baseline. Research is free of generation cost; strategies may use
-        the reasoning model if you select targets later. Note: while Qloo is not configured, both arms lack taste signals, so the comparison will show no Qloo effect.
-      </ConfirmDialog>
-    </Card>
-  );
-}
-
 function DiffPanel({ runId }: { runId?: string }) {
   const d = useRunDiff(runId);
   return (
@@ -582,9 +486,8 @@ function DiffPanel({ runId }: { runId?: string }) {
 
 /* ------------------------------------------------------------------ revision */
 function RevisionPanel({ candidates }: { candidates: string[] }) {
-  const { pid, project, setConsoleRunId } = useProjectCtx();
+  const { pid, project } = useProjectCtx();
   const revs = useRevisions(pid);
-  const toast = useToast();
   const [kind, setKind] = useState<'exclude_region' | 'set_ad_budget' | 'disable_feature' | 'enable_feature' | 'change_audience_role'>('exclude_region');
   const [region, setRegion] = useState('');
   const [budget, setBudget] = useState('');
@@ -592,24 +495,19 @@ function RevisionPanel({ candidates }: { candidates: string[] }) {
   const [aud, setAud] = useState('');
   const [role, setRole] = useState('purchaser');
   const [confirm, setConfirm] = useState(false);
-  const apply = useApiMutation(
-    () =>
-      mutations.applyRevision(pid, {
-        kind,
-        region_name: kind === 'exclude_region' ? region : undefined,
-        ad_spend_budget: kind === 'set_ad_budget' ? budget : undefined,
-        feature_key: kind.endsWith('feature') ? feature : undefined,
-        audience_id: kind === 'change_audience_role' ? aud : undefined,
-        role: kind === 'change_audience_role' ? (role as 'purchaser') : undefined,
-        rerun: true,
-      }),
-    [['project', pid], ['runs', pid], ['revisions', pid], ['constraints', pid], ['product', pid], ['audiences', pid], ['strategies', pid]],
-  );
+  const body: RevisionBody = {
+    kind,
+    region_name: kind === 'exclude_region' ? region : undefined,
+    ad_spend_budget: kind === 'set_ad_budget' ? budget : undefined,
+    feature_key: kind.endsWith('feature') ? feature : undefined,
+    audience_id: kind === 'change_audience_role' ? aud : undefined,
+    role: kind === 'change_audience_role' ? (role as 'purchaser') : undefined,
+  };
   const valid =
     (kind === 'exclude_region' && region) || (kind === 'set_ad_budget' && budget !== '') || (kind.endsWith('feature') && feature) || (kind === 'change_audience_role' && aud && role);
   return (
     <Card className="mt-6">
-      <CardHeader icon={<RotateCcw className="h-4 w-4" />} title="Revise and re-run" subtitle="Apply a common revision as a new version. Only affected research, strategies and creative are invalidated; previous results stay." />
+      <CardHeader icon={<RotateCcw className="h-4 w-4" />} title="Revise and re-run" subtitle="Preview a common revision first. Applying it creates a new version; only affected research, strategies and creative are invalidated and previous results stay." />
       <div className="grid gap-6 p-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <div className="space-y-3">
           <Field label="Revision">
@@ -671,9 +569,10 @@ function RevisionPanel({ candidates }: { candidates: string[] }) {
               </Field>
             </div>
           )}
-          <Button variant="brand" disabled={!valid} onClick={() => setConfirm(true)}>
-            Apply &amp; re-run research
+          <Button variant="brand" icon={<Eye className="h-4 w-4" />} disabled={!valid} onClick={() => setConfirm(true)}>
+            Preview the change
           </Button>
+          <p className="text-xs text-muted">You see what would change and what stays before anything is applied.</p>
         </div>
         <div>
           <p className="eyebrow mb-2">Revision history</p>
@@ -692,38 +591,8 @@ function RevisionPanel({ candidates }: { candidates: string[] }) {
           </ol>
         </div>
       </div>
-      <ConfirmDialog
-        open={confirm}
-        onClose={() => setConfirm(false)}
-        title="Apply revision and re-run research?"
-        confirmLabel="Apply"
-        loading={apply.isPending}
-        onConfirm={() =>
-          apply.mutate(undefined, {
-            onSuccess: (r) => {
-              setConfirm(false);
-              if (r.run) setConsoleRunId(r.run.id);
-              toast.success('Revision applied', 'A new research run started. Compare it with “What changed” when it finishes.');
-            },
-            onError: (e) => toast.error('Could not apply revision', e),
-          })
-        }
-      >
-        A new product/constraint/audience version is created and a new research run starts (free of generation cost). Earlier versions, strategies and creative remain available.
-      </ConfirmDialog>
+      <RevisionPreviewSheet open={confirm} body={valid ? body : null} onClose={() => setConfirm(false)} />
     </Card>
-  );
-}
-
-function StateCell({ x }: { x: { eligible: boolean; status: string; planning_index: number | null; rank: number | null } | null | undefined }) {
-  if (!x) return <span className="text-subtle">not assessed</span>;
-  if (!x.eligible) return <Badge tone="bad">Excluded</Badge>;
-  return (
-    <span className="inline-flex flex-wrap items-center gap-1">
-      <StatusPill status={x.status} />
-      {x.rank != null && <Badge tone="ink">#{x.rank}</Badge>}
-      {x.planning_index != null && <span className="num text-muted">{x.planning_index.toFixed(2)}</span>}
-    </span>
   );
 }
 

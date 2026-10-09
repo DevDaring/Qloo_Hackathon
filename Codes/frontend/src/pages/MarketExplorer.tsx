@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   BookmarkPlus,
+  Network,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -38,11 +39,15 @@ import {
 } from '../api/hooks';
 import type { Place } from '../api/types';
 import { PageWrap } from '../components/AppShell';
+import { ActionPreview } from '../components/ActionPreview';
+import { researchPrereqs } from '../hooks/useJourney';
 import { CategoryDistribution, Competitors, EvidenceCoverage, FeatureRelevance, TasteProfile, categoryColor } from '../components/ExplorerCharts';
 import { EvidenceChip } from '../components/Evidence';
 import { MapView, type MapArea, type MapViewHandle } from '../components/MapView';
 import { Modal } from '../components/Overlay';
 import { useProjectCtx } from '../components/ProjectContext';
+import { Editable, useLocked } from '../components/Locked';
+import { WhyThisPlace } from '../components/WhyThisPlace';
 import { useToast } from '../components/Toast';
 import {
   Badge,
@@ -80,11 +85,11 @@ export default function MarketExplorer() {
 }
 
 function Explorer() {
-  const { pid, project, setConsoleRunId } = useProjectCtx();
+  const { pid, project, setConsoleRunId, sel: ctxSel, setSel } = useProjectCtx();
   const [params, setParams] = useSearchParams();
   const saved = project?.saved_map_state ?? {};
   const runs = useRuns(pid);
-  const runId = pickDefaultRun(runs.data?.items, params.get('run') ?? saved.run_id)?.id;
+  const runId = pickDefaultRun(runs.data?.items, params.get('run') ?? ctxSel.runId ?? saved.run_id)?.id;
   const rd = useRun(runId);
   const areasQ = useAreas(pid);
   const cfg = usePublicConfig().data;
@@ -93,7 +98,13 @@ function Explorer() {
   const toast = useToast();
   const nav = useNavigate();
 
-  const [areaId, setAreaId] = useState<string>(saved.filters?.area_id ?? '');
+  // the city filter is the shared working context (context bar ↔ explorer)
+  const areaId = ctxSel.areaId ?? '';
+  const setAreaId = (v: string) => setSel({ areaId: v || undefined });
+  useEffect(() => {
+    if (!ctxSel.areaId && saved.filters?.area_id) setSel({ areaId: saved.filters.area_id });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [cats, setCats] = useState<string[]>(saved.filters?.category ? saved.filters.category.split(',') : []);
   const [roles, setRoles] = useState<string[]>(saved.filters?.role ? saved.filters.role.split(',') : []);
   const [view, setView] = useState<'map' | 'list'>(saved.view ?? 'map');
@@ -103,7 +114,7 @@ function Explorer() {
   const [tray, setTray] = useState<string[]>([]);
   const [provider, setProvider] = useState<'all' | 'qloo' | 'osm'>('all');
   const [taste, setTaste] = useState(false);
-  const [tasteAud, setTasteAud] = useState('');
+  const [tasteAud, setTasteAud] = useState(ctxSel.audienceId ?? '');
   const [drawing, setDrawing] = useState(false);
   const [drawPts, setDrawPts] = useState<[number, number][]>([]);
   const [saveOpen, setSaveOpen] = useState(false);
@@ -189,6 +200,9 @@ function Explorer() {
     });
   }, [['project', pid]]);
   const start = useApiMutation(() => mutations.startRun(pid), [['project', pid], ['runs', pid]]);
+  const prereqs = researchPrereqs(project);
+  const locked = useLocked();
+  const [why, setWhy] = useState<Place | null>(null);
 
   const toggle = (arr: string[], v: string) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
   const showTable = view === 'list' || !!mapError;
@@ -204,12 +218,14 @@ function Explorer() {
         actions={
           <>
             <label className="sr-only" htmlFor="run-select">Research run</label>
+            <span id="runs" className="sr-only">Research runs</span>
             <Select
               id="run-select"
               className="h-10 w-auto min-w-[220px]"
               value={runId ?? ''}
               onChange={(e) => {
                 setParams({ run: e.target.value });
+                setSel({ runId: e.target.value });
                 setSelected(null);
               }}
             >
@@ -220,27 +236,45 @@ function Explorer() {
               ))}
               {!runs.data?.items.length && <option value="">No runs yet</option>}
             </Select>
-            <Button
-              variant="outline"
-              icon={<Play className="h-4 w-4" />}
-              loading={start.isPending}
-              onClick={() =>
-                start.mutate(undefined, {
-                  onSuccess: (r) => {
-                    setConsoleRunId(r.run.id);
-                    toast.success('Research started', 'Watch the run console; results appear when places are retrieved.');
-                  },
-                  onError: (e) => toast.error('Could not start research', e),
-                })
-              }
+            <ActionPreview
+              tip="Find places and audience matches for your selected cities."
+              title="Start research"
+              details={<p>Starts a new research run (places, climate, Qloo taste signals) with the current brief and audiences. Earlier runs stay available in the run selector. Nothing is generated or bought.</p>}
+              disabledReason={prereqs.length ? `First ${prereqs.join(', ')}.` : undefined}
+              edit
             >
-              Start research
-            </Button>
+              <Button
+                id="start"
+                variant="outline"
+                icon={<Play className="h-4 w-4" />}
+                loading={start.isPending}
+                disabled={prereqs.length > 0}
+                onClick={() =>
+                  start.mutate(undefined, {
+                    onSuccess: (r) => {
+                      setConsoleRunId(r.run.id);
+                      toast.success('Research started', 'Watch the run console; results appear when places are retrieved.');
+                    },
+                    onError: (e) => toast.error('Could not start research', e),
+                  })
+                }
+              >
+                Start research
+              </Button>
+            </ActionPreview>
             <Button
               variant="primary"
               icon={<Save className="h-4 w-4" />}
               loading={saveState.isPending}
-              onClick={() => saveState.mutate(undefined, { onSuccess: () => toast.success('Map state saved', 'It is restored next time you open the explorer.'), onError: (e) => toast.error('Could not save map state', e) })}
+              onClick={() =>
+                saveState.mutate(undefined, {
+                  onSuccess: () =>
+                    locked
+                      ? toast.info('View kept for this visit', 'The read-only sample keeps its shared saved view; duplicate it to save your own.')
+                      : toast.success('Map state saved', 'It is restored next time you open the explorer.'),
+                  onError: (e) => toast.error('Could not save map state', e),
+                })
+              }
             >
               Save view
             </Button>
@@ -251,7 +285,7 @@ function Explorer() {
       {runs.isLoading ? (
         <Skeleton className="h-[560px] w-full" />
       ) : !runId ? (
-        <EmptyState icon={<MapPinned className="h-5 w-5" />} title="No research yet" action={<Button onClick={() => start.mutate(undefined)} loading={start.isPending}>Start research</Button>}>
+        <EmptyState icon={<MapPinned className="h-5 w-5" />} title="No research yet" action={<Editable note><Button onClick={() => start.mutate(undefined)} loading={start.isPending}>Start research</Button></Editable>}>
           Start a research run to retrieve places and evidence for your candidate locations.
         </EmptyState>
       ) : (
@@ -359,7 +393,12 @@ function Explorer() {
                     </button>
                   )}
                   <div className="mt-5 border-t border-line pt-4">
-                    <Toggle checked={taste} onChange={setTaste} label={<span className="inline-flex items-center gap-1"><Flame className="h-3.5 w-3.5 text-violet-600" /> Taste layer (Qloo)</span>} description="Provider affinity heatmap — never demand." />
+                    <ActionPreview
+                      tip={`Show relative taste affinity for the selected audience in ${assessments.find((a) => a.area_id === (areaId || assessments[0]?.area_id))?.area_name ?? 'the selected city'} (Qloo heatmap). It is a relative signal, not demand.`}
+                      disabledReason={tasteQ.data && !tasteQ.data.available ? tasteQ.data.reason : undefined}
+                    >
+                      <Toggle checked={taste} onChange={setTaste} label={<span className="inline-flex items-center gap-1"><Flame className="h-3.5 w-3.5 text-violet-600" /> View taste layer</span>} description="Provider affinity heatmap — never demand." />
+                    </ActionPreview>
                     {taste && (
                       <div className="mt-3 space-y-2">
                         <Select aria-label="Audience for taste layer" value={tasteAud} onChange={(e) => setTasteAud(e.target.value)} className="h-9 py-1 text-xs">
@@ -445,6 +484,7 @@ function Explorer() {
                     <Button size="sm" variant="outline" icon={<Navigation className="h-3.5 w-3.5" />} onClick={() => mapRef.current?.fitAreas()}>
                       Fit areas
                     </Button>
+                    <Editable>
                     <Button
                       size="sm"
                       variant={drawing ? 'brand' : 'outline'}
@@ -456,6 +496,7 @@ function Explorer() {
                     >
                       {drawing ? `Drawing… ${drawPts.length} pts` : 'Draw area'}
                     </Button>
+                    </Editable>
                     {drawing && drawPts.length >= 3 && (
                       <Button size="sm" variant="primary" onClick={() => (setDrawing(false), setSaveOpen(true))}>
                         Finish polygon
@@ -463,9 +504,11 @@ function Explorer() {
                     )}
                   </>
                 )}
-                <Button size="sm" variant="outline" icon={<BookmarkPlus className="h-3.5 w-3.5" />} onClick={() => (setDrawPts([]), setSaveOpen(true))}>
-                  Save area (radius)
-                </Button>
+                <Editable>
+                  <Button size="sm" variant="outline" icon={<BookmarkPlus className="h-3.5 w-3.5" />} onClick={() => (setDrawPts([]), setSaveOpen(true))}>
+                    Save area (radius)
+                  </Button>
+                </Editable>
               </div>
               {drawing && <Callout tone="accent" className="text-xs">Click on the map to add polygon vertices (at least three), then “Finish polygon”. Coordinates are stored in EPSG:4326.</Callout>}
               {mapError && view === 'map' && (
@@ -514,7 +557,7 @@ function Explorer() {
                       <span className="text-[11px] text-subtle">sorted by distance</span>
                     </div>
                     <AnimatePresence>
-                      {sel && <PlaceDetail key={sel.id} p={sel} audName={audName} areaName={assessments.find((a) => a.area_id === sel.area_id)?.area_name} onClose={() => setSelected(null)} starred={shortlisted.has(sel.id)} onStar={() => shortlist.mutate(sel)} />}
+                      {sel && <PlaceDetail key={sel.id} p={sel} audName={audName} areaName={assessments.find((a) => a.area_id === sel.area_id)?.area_name} onClose={() => setSelected(null)} starred={shortlisted.has(sel.id)} onStar={() => shortlist.mutate(sel)} onWhy={run?.qloo_enabled ? () => setWhy(sel) : undefined} />}
                     </AnimatePresence>
                     <ul className="scroll-thin flex-1 overflow-y-auto p-2" aria-label="Places">
                       {places.isLoading &&
@@ -680,6 +723,7 @@ function Explorer() {
         center={mapRef.current?.getView()?.center ?? (sel ? [sel.lon, sel.lat] : undefined)}
         shortlistIds={Array.from(shortlisted).filter((id) => items.some((p) => p.id === id))}
       />
+      <WhyThisPlace place={why} runId={runId} areaName={assessments.find((a) => a.area_id === why?.area_id)?.area_name} onClose={() => setWhy(null)} />
     </PageWrap>
   );
 }
@@ -692,7 +736,7 @@ function ProviderBadge({ p }: { p: Place }) {
   );
 }
 
-function PlaceDetail({ p, areaName, onClose, starred, onStar, audName }: { p: Place; areaName?: string; onClose: () => void; starred: boolean; onStar: () => void; audName: Record<string, string> }) {
+function PlaceDetail({ p, areaName, onClose, starred, onStar, audName, onWhy }: { p: Place; areaName?: string; onClose: () => void; starred: boolean; onStar: () => void; audName: Record<string, string>; onWhy?: () => void }) {
   const osm = p.provider_id?.match(/^(node|way|relation)\/(\d+)$/);
   const md = (p.metadata ?? {}) as { qloo_affinity_by_audience?: Record<string, number | null>; qloo_popularity?: number; business_rating?: number; source_note?: string };
   const aff = Object.entries(md.qloo_affinity_by_audience ?? {});
@@ -767,10 +811,17 @@ function PlaceDetail({ p, areaName, onClose, starred, onStar, audName }: { p: Pl
           </div>
         )}
         <p className="mt-2 rounded-lg bg-warn-soft/60 px-2.5 py-1.5 text-[11.5px] text-fg">Retrieved set, not a census: absence from this list does not mean absence on the ground. A place record is not an ad slot.</p>
-        <div className="mt-3 flex gap-2">
-          <Button size="sm" variant={starred ? 'secondary' : 'outline'} icon={<Star className={cn('h-3.5 w-3.5', starred && 'fill-amber-400 text-amber-500')} />} onClick={onStar}>
-            {starred ? 'Shortlisted' : 'Shortlist'}
-          </Button>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {p.provider === 'qloo' && onWhy && (
+            <Button size="sm" variant="brand" icon={<Network className="h-3.5 w-3.5" />} onClick={onWhy}>
+              Why this place?
+            </Button>
+          )}
+          <Editable>
+            <Button size="sm" variant={starred ? 'secondary' : 'outline'} icon={<Star className={cn('h-3.5 w-3.5', starred && 'fill-amber-400 text-amber-500')} />} onClick={onStar}>
+              {starred ? 'Shortlisted' : 'Shortlist'}
+            </Button>
+          </Editable>
           {p.evidence_id && <EvidenceChip ids={[p.evidence_id]} title={`Evidence for ${p.name}`} className="!py-1.5" label="Evidence" />}
         </div>
       </div>

@@ -7,11 +7,16 @@ import { Button, IconButton } from './ui';
 
 const FOCUSABLE = 'a[href],button:not([disabled]),textarea,input:not([type=hidden]),select,[tabindex]:not([tabindex="-1"])';
 
-/** Focus trap + Escape + scroll lock + focus restore for dialogs. */
-function useDialog(open: boolean, onClose: () => void) {
+/** Open dialogs, innermost last: only the top one reacts to Escape and Tab. */
+const stack: symbol[] = [];
+
+/** Focus trap + Escape + scroll lock + focus restore for dialogs (nested dialogs close one at a time). */
+export function useDialog(open: boolean, onClose: () => void) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
+    const me = Symbol('dialog');
+    stack.push(me);
     const prev = document.activeElement as HTMLElement | null;
     const { overflow } = document.body.style;
     document.body.style.overflow = 'hidden';
@@ -20,6 +25,7 @@ function useDialog(open: boolean, onClose: () => void) {
       el?.focus();
     }, 30);
     const onKey = (e: KeyboardEvent) => {
+      if (stack[stack.length - 1] !== me) return;
       if (e.key === 'Escape') {
         e.stopPropagation();
         onClose();
@@ -42,7 +48,9 @@ function useDialog(open: boolean, onClose: () => void) {
     return () => {
       window.clearTimeout(t);
       document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = overflow;
+      const i = stack.indexOf(me);
+      if (i >= 0) stack.splice(i, 1);
+      if (!stack.length) document.body.style.overflow = overflow;
       prev?.focus?.();
     };
   }, [open, onClose]);
@@ -127,6 +135,7 @@ export function Drawer({
   children,
   footer,
   width = 'max-w-lg',
+  layer = 'z-[75]',
 }: {
   open: boolean;
   onClose: () => void;
@@ -135,13 +144,15 @@ export function Drawer({
   children?: ReactNode;
   footer?: ReactNode;
   width?: string;
+  /** z-index class; nested drawers (evidence over a story) sit higher */
+  layer?: string;
 }) {
   const ref = useDialog(open, onClose);
   const tid = useId();
   return createPortal(
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-[75]">
+        <div className={cn('fixed inset-0', layer)}>
           <motion.div
             className="absolute inset-0 bg-[#0E1320]/35 backdrop-blur-[2px]"
             initial={{ opacity: 0 }}

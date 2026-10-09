@@ -1,16 +1,19 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Archive, CircleHelp, Fingerprint, Languages, Link2, Pencil, Plus, Search, UserRound, Users } from 'lucide-react';
+import { Archive, ArrowLeftRight, CircleHelp, Fingerprint, Languages, Link2, Network, Pencil, Plus, Search, UserRound, Users } from 'lucide-react';
 import { ApiError, type Schemas } from '../api/client';
-import { mutations, pickDefaultRun, useAnalytics, useApiMutation, useAudiences, useProviders, useRuns } from '../api/hooks';
+import { mutations, pickDefaultRun, useAnalytics, useApiMutation, useAudiences, useProviders, useRun, useRuns } from '../api/hooks';
 import type { AudienceRole, AudienceWithEntities, EntityCandidate, Lang, ResolvedEntity } from '../api/types';
 import { PageWrap } from '../components/AppShell';
 import { TasteProfile } from '../components/ExplorerCharts';
 import { TagInput, fieldErrors } from '../components/FormBits';
 import { ConfirmDialog, Modal } from '../components/Overlay';
 import { useProjectCtx } from '../components/ProjectContext';
+import { Editable, useLocked } from '../components/Locked';
+import { TasteStory } from '../components/TasteStory';
+import { AudienceCompare } from '../components/AudienceCompare';
 import { useToast } from '../components/Toast';
-import { Badge, Button, Callout, Card, Checkbox, EmptyState, ErrorState, Field, Input, PageHeader, Select, SkeletonCard, Textarea, Tooltip, fadeUp, stagger, type Tone } from '../components/ui';
+import { Badge, Button, Callout, Card, CardHeader, Checkbox, EmptyState, ErrorState, Field, Input, PageHeader, Select, SkeletonCard, Tabs, Textarea, Tooltip, fadeUp, stagger, type Tone } from '../components/ui';
 import { cn, humanize } from '../lib/format';
 import { LANG_LABEL, ROLE_LABEL } from '../lib/labels';
 
@@ -40,9 +43,11 @@ export default function AudienceInsights() {
         title="Audience insights"
         description="Who uses, buys, procures or distributes the product. Interests come only from voluntary inputs or research — never inferred from health, and personas are hypothetical."
         actions={
-          <Button variant="brand" icon={<Plus className="h-4 w-4" />} onClick={() => setEdit('new')}>
-            New audience
-          </Button>
+          <Editable note>
+            <Button id="new-audience" variant="brand" icon={<Plus className="h-4 w-4" />} onClick={() => setEdit('new')}>
+              New audience
+            </Button>
+          </Editable>
         }
       />
       {qlooOff && (
@@ -50,6 +55,7 @@ export default function AudienceInsights() {
           {providers?.qloo.message} Interests stay listed but unresolved, and taste signals show as Unknown. Add <code className="font-mono">QLOO_API_KEY</code> to the server’s .env to enable resolution.
         </Callout>
       )}
+      <ExplainSection />
       {q.isLoading && (
         <div className="grid gap-5 lg:grid-cols-2">
           <SkeletonCard lines={6} />
@@ -79,6 +85,7 @@ function AudienceCard({ a, onEdit, qlooOff }: { a: AudienceWithEntities; onEdit:
   const { pid } = useProjectCtx();
   const toast = useToast();
   const [archiving, setArchiving] = useState(false);
+  const locked = useLocked();
   const archive = useApiMutation(() => mutations.archiveAudience(a.audience_id), [['audiences', pid], ['project', pid]]);
   return (
     <Card className="flex h-full flex-col overflow-hidden">
@@ -100,14 +107,16 @@ function AudienceCard({ a, onEdit, qlooOff }: { a: AudienceWithEntities; onEdit:
             <Badge tone="neutral">v{a.version}</Badge>
           </div>
         </div>
-        <div className="flex gap-1">
-          <button className="rounded-lg p-2 text-muted hover:bg-surface2 hover:text-fg" onClick={onEdit} aria-label={`Edit ${a.name}`}>
-            <Pencil className="h-4 w-4" />
-          </button>
-          <button className="rounded-lg p-2 text-muted hover:bg-bad-soft hover:text-bad" onClick={() => setArchiving(true)} aria-label={`Archive ${a.name}`}>
-            <Archive className="h-4 w-4" />
-          </button>
-        </div>
+        {!locked && (
+          <div className="flex gap-1">
+            <button className="rounded-lg p-2 text-muted hover:bg-surface2 hover:text-fg [@media(pointer:coarse)]:p-3" onClick={onEdit} aria-label={`Edit ${a.name}`}>
+              <Pencil className="h-4 w-4" />
+            </button>
+            <button className="rounded-lg p-2 text-muted hover:bg-bad-soft hover:text-bad [@media(pointer:coarse)]:p-3" onClick={() => setArchiving(true)} aria-label={`Archive ${a.name}`}>
+              <Archive className="h-4 w-4" />
+            </button>
+          </div>
+        )}
       </div>
       <div className="flex-1 space-y-4 p-5">
         {a.description && <p className="text-sm text-muted">{a.description}</p>}
@@ -166,9 +175,10 @@ function AudienceCard({ a, onEdit, qlooOff }: { a: AudienceWithEntities; onEdit:
 
 function InterestRow({ text, entity, qlooOff }: { text: string; entity?: ResolvedEntity; qlooOff: boolean }) {
   const [open, setOpen] = useState(false);
+  const locked = useLocked();
   const status = entity?.status ?? (qlooOff ? 'unavailable' : 'pending');
   return (
-    <li className="rounded-xl border border-line px-3 py-2.5">
+    <li id={entity ? `entity-${entity.id}` : undefined} className="scroll-mt-28 rounded-xl border border-line px-3 py-2.5">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-semibold">{text}</span>
         <Badge tone={ENTITY_TONE[status] ?? 'neutral'}>{status === 'not_found' ? 'Not found' : humanize(status)}</Badge>
@@ -178,7 +188,7 @@ function InterestRow({ text, entity, qlooOff }: { text: string; entity?: Resolve
             {entity.qloo_type && <span className="text-subtle">· {isTag(entity.qloo_id) ? 'tag' : 'entity'} · {shortType(entity.qloo_type)}</span>}
           </span>
         )}
-        {entity && (
+        {entity && !locked && (
           <button className="ml-auto text-xs font-semibold text-accent-ink hover:underline" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
             {open ? 'Close' : entity.status === 'ambiguous' || entity.status === 'not_found' ? 'Resolve' : 'Change'}
           </button>
@@ -311,6 +321,80 @@ function EntityResolver({ e, onDone }: { e: ResolvedEntity; onDone: () => void }
         Mark as not found in Qloo
       </button>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ explanations (taste story, compare) */
+function ExplainSection() {
+  const { pid, project, sel, setSel } = useProjectCtx();
+  const runs = useRuns(pid);
+  const qlooRuns = (runs.data?.items ?? []).filter((r) => r.qloo_enabled);
+  const run = pickDefaultRun(qlooRuns, sel.runId);
+  const rd = useRun(run?.id);
+  const areas = (rd.data?.assessments ?? []).filter((a) => a.eligible).sort((x, y) => (x.rank ?? 99) - (y.rank ?? 99));
+  const auds = (project?.audiences ?? []).map((a) => ({ id: a.id, name: a.name }));
+  const areaId = areas.some((a) => a.area_id === sel.areaId) ? sel.areaId : areas[0]?.area_id;
+  const audId = auds.some((a) => a.id === sel.audienceId) ? sel.audienceId : auds[0]?.id;
+  const [tab, setTab] = useState<'story' | 'compare'>('story');
+  const [pair, setPair] = useState<[string, string] | null>(null);
+  const a = pair?.[0] ?? audId;
+  const b = pair?.[1] ?? auds.find((x) => x.id !== a)?.id;
+  if (!runs.isLoading && !run) return null;
+  return (
+    <Card className="mb-8 scroll-mt-28" id="taste-story">
+      <CardHeader
+        icon={<Network className="h-4 w-4" />}
+        title="Why these places?"
+        subtitle={`From your interests to Qloo’s recommendations, the placement, the campaign hypothesis and the ad — for one audience in one city. Research run ${run ? run.id.slice(0, 8) : '…'}.`}
+      />
+      <div className="space-y-4 p-5">
+        <div className="flex flex-wrap items-center gap-3">
+          <Tabs<'story' | 'compare'>
+            size="sm"
+            value={tab}
+            onChange={setTab}
+            tabs={[
+              { key: 'story', label: 'Taste story', icon: <Network className="h-3.5 w-3.5" /> },
+              { key: 'compare', label: 'Compare two audiences', icon: <ArrowLeftRight className="h-3.5 w-3.5" /> },
+            ]}
+          />
+          <label className="ml-auto flex items-center gap-2 text-[13px] text-muted">
+            City
+            <Select className="h-9 w-auto min-w-[150px] py-1" value={areaId ?? ''} onChange={(e) => setSel({ areaId: e.target.value })}>
+              {areas.map((x) => (
+                <option key={x.area_id} value={x.area_id}>
+                  {x.area_name}
+                </option>
+              ))}
+            </Select>
+          </label>
+        </div>
+        {tab === 'story' ? (
+          <>
+            <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Audience">
+              {auds.map((x) => (
+                <button
+                  key={x.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={x.id === audId}
+                  onClick={() => setSel({ audienceId: x.id })}
+                  className={cn(
+                    'min-h-[36px] rounded-xl border px-3 text-[13px] font-medium transition [@media(pointer:coarse)]:min-h-[44px]',
+                    x.id === audId ? 'border-fg/25 bg-surface2 text-fg shadow-card' : 'border-line text-muted hover:text-fg',
+                  )}
+                >
+                  {x.name.replace(/\s*\(hypothetical persona\)/i, '')}
+                </button>
+              ))}
+            </div>
+            <TasteStory runId={run?.id} areaId={areaId} audienceId={audId} />
+          </>
+        ) : (
+          <AudienceCompare runId={run?.id} areaId={areaId} audiences={auds} a={a} b={b} onChange={(x, y) => setPair([x, y])} />
+        )}
+      </div>
+    </Card>
   );
 }
 

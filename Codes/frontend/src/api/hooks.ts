@@ -264,7 +264,7 @@ export const useExperiments = (pid?: string) =>
   });
 
 export const useExperiment = (eid?: string | null) =>
-  useQuery({ queryKey: ['experiment', eid], queryFn: () => get<T.Experiment>(`/experiments/${eid}`), enabled: !!eid });
+  useQuery({ queryKey: ['experiment', eid], queryFn: () => get<T.ExperimentAnalysis>(`/experiments/${eid}`), enabled: !!eid });
 
 export const useRevisions = (pid?: string) =>
   useQuery({ queryKey: ['revisions', pid], queryFn: () => get<{ items: T.Revision[] }>(`/projects/${pid}/revisions`), enabled: !!pid });
@@ -279,13 +279,60 @@ export const useConsultHistory = (pid?: string) =>
     enabled: !!pid,
   });
 
+/* ---------------------------------------------------------------- explanation views (read-only, no provider calls) */
+export const useJourneyApi = (pid?: string) =>
+  useQuery({ queryKey: ['journey', pid], queryFn: () => get<T.JourneyResponse>(`/projects/${pid}/journey`), enabled: !!pid, staleTime: 15_000 });
+
+export const useTasteStory = (rid?: string, areaId?: string, audId?: string, placeId?: string) =>
+  useQuery({
+    queryKey: ['taste-story', rid, areaId, audId, placeId ?? null],
+    queryFn: () =>
+      get<T.TasteStory>(`/runs/${rid}/taste-story`, { area_id: areaId, audience_version_id: audId, ...(placeId ? { place_id: placeId } : {}) }),
+    enabled: !!rid && !!areaId && !!audId,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+
+export const useAudienceCompare = (rid?: string, areaId?: string, a?: string, b?: string) =>
+  useQuery({
+    queryKey: ['audience-compare', rid, areaId, a, b],
+    queryFn: () => get<T.AudienceCompare>(`/runs/${rid}/audience-compare`, { area_id: areaId, a, b }),
+    enabled: !!rid && !!areaId && !!a && !!b && a !== b,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+
+export const useCreativeTrace = (bid?: string) =>
+  useQuery({ queryKey: ['trace', bid], queryFn: () => get<T.CreativeTrace>(`/creative-briefs/${bid}/trace`), enabled: !!bid, staleTime: 60_000 });
+
+export const useOpportunities = (rid?: string) =>
+  useQuery({
+    queryKey: ['opportunities', rid],
+    queryFn: () => get<{ run_id: string; items: T.Opportunity[]; message: string | null }>(`/runs/${rid}/opportunities`),
+    enabled: !!rid,
+    staleTime: 5 * 60_000,
+  });
+
+export type RevisionBody = Partial<Schemas['RevisionApplyIn']> & { kind: Schemas['RevisionApplyIn']['kind'] };
+
+/** Dry run of a revision. A POST, but it writes nothing and is allowed on the locked sample. */
+export const useRevisionPreview = (pid?: string, body?: RevisionBody | null) =>
+  useQuery({
+    queryKey: ['revision-preview', pid, body],
+    queryFn: () => post<T.RevisionPreview>(`/projects/${pid}/revisions/preview`, body),
+    enabled: !!pid && !!body,
+    retry: false,
+    staleTime: 30_000,
+  });
+
 /* ---------------------------------------------------------------- mutations */
 /** Generic mutation helper that invalidates the given query-key prefixes on success. */
 export function useApiMutation<TVars, TRes>(fn: (v: TVars) => Promise<TRes>, invalidate: QueryKey[] = []) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: fn,
-    onSuccess: () => Promise.all(invalidate.map((k) => qc.invalidateQueries({ queryKey: k }))),
+    // every successful write may move the project journey along
+    onSuccess: () => Promise.all([...invalidate, ['journey']].map((k) => qc.invalidateQueries({ queryKey: k }))),
   });
 }
 
@@ -355,4 +402,5 @@ export const mutations = {
   applyRevision: (pid: string, b: Partial<Schemas['RevisionApplyIn']> & { kind: Schemas['RevisionApplyIn']['kind'] }) =>
     post<{ revision: unknown; run?: T.Run; job?: T.Job }>(`/projects/${pid}/revisions/apply`, b),
   consult: (pid: string, message: string, runId?: string) => post<T.ConsultAnswer>(`/projects/${pid}/consult`, { message, run_id: runId }),
+  duplicateProject: (pid: string) => post<T.Project & { copied_from: string; next: string }>(`/projects/${pid}/duplicate`),
 };

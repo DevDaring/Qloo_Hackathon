@@ -151,3 +151,41 @@ def test_compose_presets_and_quality():
         assert q["dimensions"]["ok"] and q["product"]["aspect_preserved"] and q["safe_area_ok"]
         assert q["passed"], q
         assert layout["background_crop"]["source_size"] == [800, 800]
+
+
+def test_swapped_city_evidence_is_detected():
+    """P0: practical equality must be checked per city, not as a bag of values."""
+    from launchlens.services.experiments import compare_fingerprints, kendall_tau
+    a = {"k": {"climate|observed_fact": "h1"}, "d": {"climate|observed_fact": "h2"}}
+    swapped = {"k": {"climate|observed_fact": "h2"}, "d": {"climate|observed_fact": "h1"}}
+    assert compare_fingerprints(a, a, {}) == []
+    assert len(compare_fingerprints(a, swapped, {"k": "Kolkata", "d": "Delhi"})) == 2
+    assert kendall_tau(["a", "b", "c"], ["a", "b", "c"]) == 1.0
+    assert kendall_tau(["a", "b", "c"], ["c", "b", "a"]) == -1.0
+    assert kendall_tau(["a"], ["a"]) is None
+
+
+def test_finite_metrics_and_explanations():
+    from launchlens.providers.qloo import _entity, finite
+    assert finite("nan") is None and finite(float("inf")) is None and finite("0.5") == 0.5
+    e = _entity({"entity_id": "X", "name": "n", "query": {"affinity": "nan", "explainability": {
+        "signal.interests.entities": [{"entity_id": "E1", "score": 1}]}}})
+    assert e["affinity"] is None
+    assert e["explanation"] == {"status": "provided", "contributions": [{"signal": "signal.interests.entities", "id": "E1", "score": 1.0}]}
+    assert _entity({"entity_id": "Y", "query": {}})["explanation"]["status"] == "not_provided"
+
+
+def test_plain_status_has_no_config_names_and_reports_backup():
+    from launchlens.services import plainstatus
+    data = {"qloo": {"configured": True, "reachable": True, "authorized": True, "checked_at": "t",
+                     "operations": {"search": "supported", "heatmap": "no_usable_data"}},
+            "reasoning": {"configured": True, "reachable": True, "authorized": True, "model": "gpt-4.1-mini",
+                          "served_by": "grok-4.20", "operations": {"structured_output": "supported"}},
+            "media": {"configured": False}, "narration": {"configured": True}, "indic_language": {"configured": True},
+            "geo": {"geocoding": {"reachable": True}}}
+    out = {x["key"]: x for x in plainstatus.build(data, "now")}
+    assert out["qloo"]["state"] == "partial" and "taste heatmap" in out["qloo"]["impact"]
+    assert out["reasoning"]["state"] == "backup" and "grok" in out["reasoning"]["summary"]
+    assert out["media"]["state"] == "not_set_up" and out["media"]["recovery"]
+    text = str(out)
+    assert "API_KEY" not in text and "_KEY" not in text and "env" not in text.lower()

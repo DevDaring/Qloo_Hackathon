@@ -7,6 +7,7 @@ import { PageWrap } from '../components/AppShell';
 import { SERIES } from '../components/ExplorerCharts';
 import { Dropzone, fieldErrors } from '../components/FormBits';
 import { useProjectCtx } from '../components/ProjectContext';
+import { LockNote, useLocked } from '../components/Locked';
 import { useToast } from '../components/Toast';
 import { Badge, Button, Callout, Card, CardHeader, EmptyState, ErrorState, Field, Input, PageHeader, SkeletonCard, Table, Tabs, Td, Th } from '../components/ui';
 import { fmtMoney, fmtNum, fmtPct, humanize } from '../lib/format';
@@ -35,6 +36,7 @@ export default function Results() {
   const { pid, project } = useProjectCtx();
   const q = useResults(pid);
   const [mode, setMode] = useState<'form' | 'csv'>('form');
+  const locked = useLocked();
   const currency = project?.currency ?? 'INR';
   const data = q.data;
   const chart = useMemo(
@@ -172,7 +174,8 @@ export default function Results() {
           <Card className="p-5">
             <p className="section-title">Import results</p>
             <Tabs<'form' | 'csv'> className="mt-3" size="sm" value={mode} onChange={setMode} tabs={[{ key: 'form', label: 'Form', icon: <Plus className="h-3.5 w-3.5" /> }, { key: 'csv', label: 'CSV upload', icon: <FileSpreadsheet className="h-3.5 w-3.5" /> }]} />
-            <div className="mt-4">{mode === 'form' ? <ImportForm currency={currency} areas={project?.constraints?.candidate_regions.map((r) => r.name) ?? []} /> : <CsvImport />}</div>
+            {locked && <LockNote className="mt-3 max-w-none">Read-only sample: results can’t be imported here. Duplicate the project to record your own pilot.</LockNote>}
+            <fieldset disabled={locked} className="m-0 mt-4 min-w-0 border-0 p-0">{mode === 'form' ? <ImportForm currency={currency} areas={project?.constraints?.candidate_regions.map((r) => r.name) ?? []} /> : <CsvImport />}</fieldset>
           </Card>
         </div>
       </div>

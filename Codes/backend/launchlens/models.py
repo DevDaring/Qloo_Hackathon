@@ -12,6 +12,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from geoalchemy2 import Geography, Geometry
+from sqlalchemy import false as sa_false
 from sqlalchemy import (
     BigInteger, Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer,
     Numeric, String, Text, UniqueConstraint, func, text,
@@ -85,6 +86,7 @@ class Project(Base):
     currency: Mapped[str] = mapped_column(String(3), default="INR")
     is_demo: Mapped[bool] = mapped_column(Boolean, default=False)
     archived: Mapped[bool] = mapped_column(Boolean, default=False)
+    locked: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false())  # read-only shared sample
     saved_map_state: Mapped[dict] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = ts_created()
     updated_at: Mapped[datetime] = ts_updated()

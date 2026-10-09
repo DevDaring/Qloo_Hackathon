@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Brain, CheckCircle2, CircleDashed, Cloud, Database, Fingerprint, Gauge, Globe2, Languages, Map as MapIcon, Mic, RefreshCw, Sparkles, XCircle } from 'lucide-react';
+import { AlertTriangle, Brain, CheckCircle2, CircleDashed, Cloud, Database, Fingerprint, Gauge, Globe2, Languages, Mic, RefreshCw, Sparkles, XCircle } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useProviders, useUsage } from '../api/hooks';
-import type { ProviderProbe } from '../api/types';
+import type { ProviderPlain, ProviderPlainState, ProviderProbe } from '../api/types';
 import { PageWrap } from '../components/AppShell';
-import { Badge, Button, Callout, Card, CardHeader, ErrorState, Meter, PageHeader, SkeletonCard, Table, Tabs, Td, Th, Tooltip, fadeUp, stagger } from '../components/ui';
-import { cn, fmtDate, fmtUsd, humanize } from '../lib/format';
+import { Badge, Button, Card, CardHeader, ErrorState, Meter, PageHeader, SkeletonCard, Table, Tabs, Td, Th, Tooltip, fadeUp, stagger } from '../components/ui';
+import { cn, fmtDate, fmtUsd, humanize, timeAgo } from '../lib/format';
 
 function Tri({ label, v, legend }: { label: string; v: boolean | null | undefined; legend?: string }) {
   const meta =
@@ -26,35 +26,112 @@ function Tri({ label, v, legend }: { label: string; v: boolean | null | undefine
   );
 }
 
-function ProviderCard({
+type Health = { level: 'ok' | 'warn' | 'bad'; headline: string; detail: string; steps?: string[] };
+
+/** Plain-language health for a probed provider. Technical facts stay in the expander. */
+function healthOf(p: ProviderProbe, name: string, whenMissing: string): Health {
+  const ops = Object.values(p.operations ?? {}).map(String);
+  if (p.configured === false)
+    return { level: 'bad', headline: 'Not set up', detail: whenMissing, steps: ['Ask the administrator to add the service key to the server configuration and restart the app.', 'Everything else keeps working; affected results are marked as unknown.'] };
+  if (p.reachable === false)
+    return { level: 'bad', headline: 'Not reachable right now', detail: `${name} did not answer the last check.`, steps: ['Use “Check again” in a few minutes.', 'Research continues with the evidence that is available and marks the gaps.'] };
+  if (p.authorized === false)
+    return { level: 'bad', headline: 'Key rejected', detail: `${name} refused the configured credential.`, steps: ['Ask the administrator to renew or replace the key on the server.'] };
+  if (ops.some((v) => /unsupported|not_enabled|disabled|forbidden/i.test(v)))
+    return { level: 'warn', headline: 'Partly available', detail: 'Some features are not enabled for this account; they are shown as unavailable rather than filled with other data.' };
+  if (p.served_by && p.model && p.served_by !== p.model)
+    return { level: 'warn', headline: 'Working via backup', detail: `The primary model is unavailable, so requests are answered by the backup (${p.served_by}).`, steps: ['No action needed for the demo; the administrator can restore the primary provider later.'] };
+  return { level: 'ok', headline: 'Working', detail: `${name} answered the last check and the credential was accepted.` };
+}
+
+const PLAIN_HEADLINE: Record<ProviderPlainState, { level: Health['level']; headline: string }> = {
+  working: { level: 'ok', headline: 'Working' },
+  backup: { level: 'warn', headline: 'Working via backup' },
+  partial: { level: 'warn', headline: 'Partly available' },
+  busy: { level: 'warn', headline: 'Busy — try again shortly' },
+  not_set_up: { level: 'bad', headline: 'Not set up' },
+  key_rejected: { level: 'bad', headline: 'Key rejected' },
+  unreachable: { level: 'bad', headline: 'Not reachable right now' },
+};
+
+/** Server-provided plain-language status (GET /providers/status → plain[]). */
+function healthFromPlain(pl: ProviderPlain, optional = false): Health {
+  const h = PLAIN_HEADLINE[pl.state] ?? { level: 'warn' as const, headline: humanize(pl.state) };
+  const level = optional && h.level === 'bad' ? 'warn' : h.level;
+  return { level, headline: optional && pl.state === 'not_set_up' ? 'Not set up (optional)' : h.headline, detail: [pl.summary, pl.impact].filter(Boolean).join(' '), steps: pl.recovery };
+}
+
+function ServiceCard({
   icon,
   name,
-  p,
-  legend,
+  purpose,
+  health,
+  checkedAt,
   children,
+  testId,
+  plain,
+  optional,
 }: {
   icon: JSX.Element;
   name: string;
-  p: ProviderProbe;
-  legend: Record<string, string>;
+  purpose: string;
+  health: Health;
+  checkedAt?: number;
   children?: React.ReactNode;
+  testId?: string;
+  plain?: ProviderPlain;
+  optional?: boolean;
 }) {
-  const ops = Object.entries(p.operations ?? {});
+  if (plain) {
+    health = healthFromPlain(plain, optional);
+    name = plain.name || name;
+    if (plain.checked_at) checkedAt = new Date(plain.checked_at).getTime();
+  }
+  const tone = health.level === 'ok' ? 'text-ok' : health.level === 'warn' ? 'text-warn' : 'text-bad';
+  const Icon = health.level === 'ok' ? CheckCircle2 : health.level === 'warn' ? AlertTriangle : XCircle;
   return (
-    <Card className="flex h-full flex-col p-5">
+    <Card className="flex h-full flex-col p-5" data-testid={testId} data-state={plain?.state}>
       <div className="flex items-center gap-3">
         <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-soft to-accent-soft text-brand-ink">{icon}</span>
         <div className="min-w-0 flex-1">
           <p className="font-display text-[16px] font-bold">{name}</p>
-          {p.model && <p className="truncate text-xs text-muted">model {p.model}</p>}
+          <p className="text-xs text-muted">{purpose}</p>
         </div>
       </div>
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div className="mt-4 flex items-start gap-2">
+        <Icon className={cn('mt-0.5 h-5 w-5 shrink-0', tone)} aria-hidden />
+        <div className="min-w-0">
+          <p className={cn('text-[15px] font-semibold', tone)}>{health.headline}</p>
+          <p className="text-[13px] text-muted">{health.detail}</p>
+        </div>
+      </div>
+      {health.steps && health.steps.length > 0 && (
+        <div className="mt-3 rounded-xl bg-surface2/70 px-3 py-2 text-[12.5px]">
+          <p className="font-semibold">{health.level === 'ok' ? 'Note' : 'What to do'}</p>
+          <ul className="mt-0.5 list-disc space-y-0.5 pl-4 text-muted">{health.steps.map((x) => <li key={x}>{x}</li>)}</ul>
+        </div>
+      )}
+      <p className="mt-3 text-[11.5px] text-subtle">Last checked {checkedAt ? timeAgo(new Date(checkedAt).toISOString()) : '—'}</p>
+      {children && (
+        <details className="group mt-3 rounded-xl border border-line px-3 py-2 text-xs text-muted">
+          <summary className="cursor-pointer select-none font-semibold text-fg [@media(pointer:coarse)]:py-2">Technical details</summary>
+          <div className="mt-2 space-y-2">{children}</div>
+        </details>
+      )}
+    </Card>
+  );
+}
+
+function ProbeDetails({ p, legend }: { p: ProviderProbe; legend: Record<string, string> }) {
+  const ops = Object.entries(p.operations ?? {});
+  return (
+    <>
+      <div className="flex flex-wrap gap-2">
         <Tri label="Configured" v={p.configured} legend={legend.configured} />
         <Tri label="Reachable" v={p.reachable} legend={legend.reachable} />
         <Tri label="Authorized" v={p.authorized} legend={legend.authorized} />
       </div>
-      <div className="mt-3">
+      <div>
         <p className="eyebrow mb-1.5">Operations</p>
         {ops.length === 0 ? (
           <p className="text-xs text-subtle">No operation verified{p.configured === false ? ' (not configured)' : ''}.</p>
@@ -76,9 +153,9 @@ function ProviderCard({
           </div>
         )}
       </div>
-      {(p.message || p.error) && <p className="mt-3 rounded-xl bg-surface2 px-3 py-2 text-xs text-muted">{String(p.message ?? p.error).slice(0, 300)}</p>}
-      {children && <div className="mt-3 text-xs text-muted">{children}</div>}
-    </Card>
+      {p.model && <p>Model: <code className="font-mono">{p.model}</code></p>}
+      {(p.message || p.error) && <p className="rounded-lg bg-surface2 px-2.5 py-1.5">{String(p.message ?? p.error).slice(0, 300)}</p>}
+    </>
   );
 }
 
@@ -92,6 +169,7 @@ export default function SettingsStatus() {
   const usage = useUsage(scope === 'project' ? pid : undefined);
   const s = q.data;
   const legend = s?.legend ?? {};
+  const plain = (key: string) => s?.plain?.find((x) => x.key === key);
   const cats = ['research', 'reasoning', 'image', 'video', 'audio'];
   const today = Number(usage.data?.today_usd ?? 0);
   const cap = Number(usage.data?.daily_cap_usd ?? 0);
@@ -100,7 +178,7 @@ export default function SettingsStatus() {
       <PageHeader
         eyebrow="System"
         title="Settings / status"
-        description="Non-secret provider configuration and verified capabilities. Keys live only in the server’s .env — there is no secret entry here."
+        description="Whether each service LaunchLens relies on is working right now, what that means for your results, and what to do if it isn’t. Keys stay on the server — there is no secret entry here."
         actions={
           <Button
             variant="outline"
@@ -110,7 +188,7 @@ export default function SettingsStatus() {
               qc.invalidateQueries({ queryKey: ['providers', true] });
             }}
           >
-            Re-probe providers
+            Check again
           </Button>
         }
       />
@@ -124,69 +202,86 @@ export default function SettingsStatus() {
       {q.error && <ErrorState error={q.error} onRetry={() => q.refetch()} />}
       {s && (
         <>
-          <div className="mb-5 flex flex-wrap gap-3 text-xs text-muted">
-            {Object.entries(legend).map(([k, v]) => (
-              <span key={k}>
-                <b className="text-fg">{humanize(k)}</b> = {v}
-              </span>
-            ))}
-          </div>
           <motion.div variants={stagger(0.06)} initial="hidden" animate="show" className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-            <motion.div variants={fadeUp} data-testid="provider-qloo">
-              <ProviderCard icon={<Fingerprint className="h-5 w-5" />} name="Qloo Taste AI" p={s.qloo} legend={legend}>
+            <motion.div variants={fadeUp}>
+              <ServiceCard
+                testId="provider-qloo"
+                plain={plain('qloo')}
+                icon={<Fingerprint className="h-5 w-5" />}
+                name="Qloo Taste AI"
+                purpose="Audience taste signals, interest matching, place affinity and the taste heatmap."
+                health={healthOf(s.qloo, 'Qloo', 'Taste signals are unavailable, so cultural fit shows as unknown and rankings use practical evidence only.')}
+                checkedAt={q.dataUpdatedAt}
+              >
+                <ProbeDetails p={s.qloo} legend={legend} />
                 <p>Base URL: {s.qloo.base_url}</p>
-                {s.qloo.configured && s.qloo.authorized && (
-                  <p className="mt-2 rounded-xl bg-ok-soft/70 px-3 py-2 text-xs text-fg">Live: taste signals, entity resolution, place insights and the heatmap layer use this key. Affinity is a relative taste signal — never demand.</p>
-                )}
                 {!s.qloo.configured && (
-                  <Callout tone="warn" className="mt-2 text-xs">
-                    <b className="text-fg">Qloo is not configured.</b> Add <code className="font-mono">QLOO_2009_API_KEY</code> or <code className="font-mono">QLOO_API_KEY</code> to the server’s <code>.env</code> and restart. Until then entity resolution, taste signals and the cultural-fit component are unavailable, and rankings stay incomplete — never filled with substitute data.
-                  </Callout>
+                  <p>
+                    Server setting: add <code className="font-mono">QLOO_2009_API_KEY</code> or <code className="font-mono">QLOO_API_KEY</code> to the server’s <code>.env</code> and restart.
+                  </p>
                 )}
-              </ProviderCard>
+              </ServiceCard>
             </motion.div>
             <motion.div variants={fadeUp}>
-              <ProviderCard icon={<Brain className="h-5 w-5" />} name="Reasoning (LLM)" p={{ ...s.reasoning, message: undefined }} legend={legend}>
+              <ServiceCard
+                icon={<Brain className="h-5 w-5" />}
+                name="Reasoning (language model)"
+                plain={plain('reasoning')}
+                purpose="Writes strategies and briefs, translates copy and answers questions — always checked against your claims."
+                health={healthOf(s.reasoning, 'The reasoning model', 'Strategies fall back to clearly labelled templates and extraction is unavailable.')}
+                checkedAt={q.dataUpdatedAt}
+              >
                 {s.reasoning.served_by && (
-                  <div className="mb-2 rounded-xl border border-accent/25 bg-accent-soft/60 p-2.5" data-testid="reasoning-served-by">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-subtle">Currently served by</p>
-                    <p className="font-mono text-[13px] font-semibold text-fg">{s.reasoning.served_by}</p>
-                    {s.reasoning.served_by !== s.reasoning.model && <p className="mt-0.5 text-[11.5px]">Fallback in use — primary {s.reasoning.model} is unavailable.</p>}
+                  <div className="rounded-lg border border-accent/25 bg-accent-soft/60 p-2" data-testid="reasoning-served-by">
+                    <p className="text-[10.5px] font-semibold uppercase tracking-wide text-subtle">Currently served by</p>
+                    <p className="font-mono text-[12.5px] font-semibold text-fg">{s.reasoning.served_by}</p>
                   </div>
                 )}
-                {s.reasoning.message && <p className="mb-2 rounded-xl bg-warn-soft/70 px-3 py-2 text-xs text-fg">{String(s.reasoning.message)}</p>}
+                <ProbeDetails p={s.reasoning} legend={legend} />
                 <p>
                   Primary: <b className="text-fg">{s.reasoning.primary}</b> · fallback: {s.reasoning.fallback} ({s.reasoning.fallback_configured ? 'configured' : 'not configured'}
                   {s.reasoning.fallback_enabled === false ? ', disabled' : ''})
                 </p>
-              </ProviderCard>
+              </ServiceCard>
             </motion.div>
             <motion.div variants={fadeUp}>
-              <ProviderCard icon={<Sparkles className="h-5 w-5" />} name="xAI Grok Imagine (images & video)" p={s.media} legend={legend}>
+              <ServiceCard
+                icon={<Sparkles className="h-5 w-5" />}
+                name="Image & video generation (xAI)"
+                plain={plain('media')}
+                purpose="Creates ad backgrounds and video clips — only after you approve a spending cap."
+                health={healthOf(s.media, 'xAI', 'Flyers and videos cannot be generated; briefs, copy and layout previews still work.')}
+                checkedAt={q.dataUpdatedAt}
+              >
+                <ProbeDetails p={s.media} legend={legend} />
                 <p>
                   Image model <b className="text-fg">{s.media.image_model ?? '—'}</b> · video model <b className="text-fg">{s.media.video_model ?? '—'}</b>
                 </p>
-                {s.media.available_models && (
-                  <p className="mt-1">Available: {Object.entries(s.media.available_models).map(([k, v]) => `${k}: ${v.join(', ')}`).join(' · ')}</p>
-                )}
-              </ProviderCard>
+                {s.media.available_models && <p>Available: {Object.entries(s.media.available_models).map(([k, v]) => `${k}: ${v.join(', ')}`).join(' · ')}</p>}
+              </ServiceCard>
             </motion.div>
             <motion.div variants={fadeUp}>
-              <Card className="h-full p-5">
-                <div className="flex items-center gap-3">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-soft to-accent-soft text-brand-ink">
-                    <Mic className="h-5 w-5" />
-                  </span>
-                  <p className="font-display text-[16px] font-bold">Narration (optional)</p>
-                </div>
-                <div className="mt-4 flex flex-wrap gap-2">
+              <ServiceCard
+                icon={<Mic className="h-5 w-5" />}
+                name="Narration (optional)"
+                plain={plain('narration')}
+                optional
+                purpose="Voice-over for videos. Without it, videos are silent with captions."
+                health={
+                  s.narration.configured
+                    ? { level: 'ok', headline: 'Available', detail: 'Narration can be added to videos; it is always labelled “needs review”.' }
+                    : { level: 'warn', headline: 'Not set up (optional)', detail: 'Videos are delivered silent with captions.' }
+                }
+                checkedAt={q.dataUpdatedAt}
+              >
+                <div className="flex flex-wrap gap-2">
                   <Tri label="Configured" v={s.narration.configured} legend={legend.configured} />
                   {s.narration.sarvam !== undefined && <Badge>Sarvam key: {s.narration.sarvam ? 'present' : 'absent'}</Badge>}
                   <Badge>Fish TTS key: {s.narration.fish ? 'present' : 'absent'}</Badge>
                   <Badge>fal key: {s.narration.fal ? 'present' : 'absent'}</Badge>
                 </div>
                 {s.narration.order && (
-                  <div className="mt-3 space-y-1.5">
+                  <div className="space-y-1.5">
                     <p className="eyebrow">Provider order (first available wins)</p>
                     {Object.entries(s.narration.order).map(([lang, order]) => (
                       <div key={lang} className="flex flex-wrap items-center gap-1.5 text-xs">
@@ -201,70 +296,70 @@ export default function SettingsStatus() {
                     ))}
                   </div>
                 )}
-                <p className="mt-3 text-xs text-muted">{s.narration.note} TTS narration is always labelled “needs review”.</p>
-              </Card>
+                <p>{s.narration.note}</p>
+              </ServiceCard>
             </motion.div>
             {s.indic_language && (
-              <motion.div variants={fadeUp} data-testid="provider-sarvam">
-                <Card className="h-full p-5">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-soft to-accent-soft text-brand-ink">
-                      <Languages className="h-5 w-5" />
-                    </span>
-                    <div className="min-w-0">
-                      <p className="font-display text-[16px] font-bold">Indian languages ({s.indic_language.provider})</p>
-                      <p className="truncate text-xs text-muted" lang="hi">हिन्दी · <span lang="bn">বাংলা</span> translation &amp; narration</p>
-                    </div>
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
+              <motion.div variants={fadeUp}>
+                <ServiceCard
+                  testId="provider-sarvam"
+                  icon={<Languages className="h-5 w-5" />}
+                  name={`Indian languages (${s.indic_language.provider})`}
+                  plain={plain('indic_language')}
+                  optional
+                  purpose="Hindi and Bengali translation and narration; translations are always flagged for your review."
+                  health={
+                    s.indic_language.configured
+                      ? { level: 'ok', headline: 'Working', detail: 'Hindi and Bengali copy is translated with brand names protected.' }
+                      : { level: 'warn', headline: 'Not set up', detail: 'Hindi and Bengali copy uses the reasoning model instead and still needs review.' }
+                  }
+                  checkedAt={q.dataUpdatedAt}
+                >
+                  <div className="flex flex-wrap gap-2">
                     <Tri label="Configured" v={s.indic_language.configured} legend={legend.configured} />
                     {s.indic_language.translation_model && <Badge tone="accent">Translation: {s.indic_language.translation_model}</Badge>}
                     {s.indic_language.tts_model && <Badge tone="accent">TTS: {s.indic_language.tts_model}</Badge>}
                   </div>
-                  {s.indic_language.verified && (
-                    <p className="mt-3 flex items-start gap-1.5 text-xs text-muted">
-                      <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ok" />
-                      {typeof s.indic_language.verified === 'string' ? s.indic_language.verified : 'Verified'}
-                    </p>
-                  )}
-                  {s.indic_language.note && <p className="mt-2 rounded-xl bg-surface2 px-3 py-2 text-xs text-muted">{s.indic_language.note}</p>}
-                </Card>
+                  {s.indic_language.verified && <p>{typeof s.indic_language.verified === 'string' ? s.indic_language.verified : 'Verified'}</p>}
+                  {s.indic_language.note && <p>{s.indic_language.note}</p>}
+                </ServiceCard>
               </motion.div>
             )}
             <motion.div variants={fadeUp}>
-              <Card className="h-full p-5">
-                <div className="flex items-center gap-3">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-soft to-accent-soft text-brand-ink">
-                    <Globe2 className="h-5 w-5" />
-                  </span>
-                  <p className="font-display text-[16px] font-bold">Geography & climate</p>
-                </div>
-                <div className="mt-4 flex flex-wrap gap-2">
+              <ServiceCard
+                icon={<Globe2 className="h-5 w-5" />}
+                name="Places, maps & climate"
+                plain={plain('geo')}
+                purpose="Finds cities and places (OpenStreetMap), map tiles and historical climate (Open-Meteo)."
+                health={
+                  s.geo.geocoding?.reachable === false
+                    ? { level: 'bad', headline: 'Place search unavailable', detail: 'The geocoder did not answer the last check.', steps: ['Use “Check again” in a few minutes; saved cities keep working.'] }
+                    : { level: 'ok', headline: 'Working', detail: 'Place search answered the last check; places and climate are fetched per research run and cached.' }
+                }
+                checkedAt={q.dataUpdatedAt}
+              >
+                <div className="flex flex-wrap gap-2">
                   <Tri label="Geocoding reachable" v={s.geo.geocoding?.reachable} legend={legend.reachable} />
                   {s.geo.geocoding && <Badge tone="ok">{s.geo.geocoding.provider}: {s.geo.geocoding.operation}</Badge>}
                 </div>
-                <ul className="mt-3 space-y-1 text-xs text-muted">
-                  {s.geo.places && <li><b className="text-fg">Places ({s.geo.places.provider}):</b> {s.geo.places.note}</li>}
-                  {s.geo.climate && <li><b className="text-fg">Climate ({s.geo.climate.provider}):</b> {s.geo.climate.note}</li>}
-                </ul>
-              </Card>
-            </motion.div>
-            <motion.div variants={fadeUp}>
-              <Card className="h-full p-5">
-                <div className="flex items-center gap-3">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-soft to-accent-soft text-brand-ink">
-                    <MapIcon className="h-5 w-5" />
-                  </span>
-                  <p className="font-display text-[16px] font-bold">Map & storage</p>
-                </div>
-                <ul className="mt-4 space-y-1.5 text-xs text-muted">
-                  <li className="truncate"><b className="text-fg">Style:</b> {s.map.style_url}</li>
-                  <li><b className="text-fg">Attribution:</b> {s.map.attribution}</li>
-                  <li className="flex items-center gap-1.5"><Database className="h-3.5 w-3.5" /> <b className="text-fg">Asset storage:</b> {s.storage.backend}</li>
-                </ul>
-              </Card>
+                {s.geo.places && <p><b className="text-fg">Places ({s.geo.places.provider}):</b> {s.geo.places.note}</p>}
+                {s.geo.climate && <p><b className="text-fg">Climate ({s.geo.climate.provider}):</b> {s.geo.climate.note}</p>}
+                <p className="truncate"><b className="text-fg">Map style:</b> {s.map.style_url}</p>
+                <p><b className="text-fg">Attribution:</b> {s.map.attribution}</p>
+                <p className="flex items-center gap-1.5"><Database className="h-3.5 w-3.5" /> <b className="text-fg">Asset storage:</b> {s.storage.backend}</p>
+              </ServiceCard>
             </motion.div>
           </motion.div>
+          <details className="mt-4 text-xs text-muted">
+            <summary className="cursor-pointer font-semibold text-fg">What the technical status words mean</summary>
+            <div className="mt-2 flex flex-wrap gap-3">
+              {Object.entries(legend).map(([k, v]) => (
+                <span key={k}>
+                  <b className="text-fg">{humanize(k)}</b> = {v}
+                </span>
+              ))}
+            </div>
+          </details>
 
           <Card className="mt-6">
             <CardHeader icon={<Gauge className="h-4 w-4" />} title="Limits" subtitle="Bounded agent activity and spending controls (server configuration)." />

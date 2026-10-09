@@ -51,6 +51,68 @@ async def owned(s: AsyncSession, p: Principal, model, obj_id: uuid.UUID):
     return obj
 
 
+# ------------------------------------------------------------ locked sample --
+# Mutating requests on a locked (shared, read-only) sample project are refused,
+# except actions that only read or produce private outputs.
+LOCK_ALLOWED = {
+    ("POST", "/api/v1/projects/{project_id}/exports"),
+    ("POST", "/api/v1/projects/{project_id}/consult"),
+    ("POST", "/api/v1/projects/{project_id}/duplicate"),
+    ("POST", "/api/v1/projects/{project_id}/revisions/preview"),
+    ("POST", "/api/v1/projects/{project_id}/locations/compare"),
+    ("PUT", "/api/v1/projects/{project_id}/map-state"),
+}
+
+
+async def _project_of(s: AsyncSession, key: str, raw: str) -> uuid.UUID | None:
+    from ..models import (
+        Audience, Claim, Experiment, Export, GeographicArea, ProviderAttempt, ResolvedEntity, Storyboard,
+        StoryboardScene,
+    )
+    models = {"audience_id": Audience, "claim_id": Claim, "entity_id": ResolvedEntity, "area_id": GeographicArea,
+              "run_id": ResearchRun, "placement_id": PlacementCandidate, "strategy_id": StrategyVersion,
+              "brief_id": CreativeBrief, "job_id": Job, "attempt_id": ProviderAttempt, "asset_id": Asset,
+              "experiment_id": Experiment, "export_id": Export}
+    try:
+        oid = uuid.UUID(raw)
+    except ValueError:
+        return None
+    if key == "project_id":
+        return oid
+    if key == "scene_id":
+        sc = await s.get(StoryboardScene, oid)
+        sb = await s.get(Storyboard, sc.storyboard_id) if sc else None
+        b = await s.get(CreativeBrief, sb.brief_id) if sb else None
+        return b.project_id if b else None
+    model = models.get(key)
+    obj = await s.get(model, oid) if model else None
+    return getattr(obj, "project_id", None) if obj else None
+
+
+async def guard_locked(request: Request) -> None:
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return
+    route = request.scope.get("route")
+    if route is None or (request.method, getattr(route, "path", "")) in LOCK_ALLOWED:
+        return
+    params = request.path_params or {}
+    if not params:
+        return
+    from ..db import SessionLocal
+    async with SessionLocal() as s:
+        for key, raw in params.items():
+            pid = await _project_of(s, key, str(raw))
+            if pid is None:
+                continue
+            proj = await s.get(Project, pid)
+            if proj is not None and proj.locked:
+                raise AppError(409, "project_locked",
+                               "This sample project is read-only so every visitor sees the same results. "
+                               "Use “Duplicate to edit” to make your own copy.",
+                               details={"action": "duplicate", "project_id": str(pid)})
+            return
+
+
 class RateLimiter:
     def __init__(self, limit: int, window_s: float):
         self.limit, self.window = limit, window_s

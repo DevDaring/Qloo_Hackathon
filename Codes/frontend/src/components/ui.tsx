@@ -55,7 +55,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       disabled={disabled || loading}
       aria-busy={loading || undefined}
       className={cn(
-        'relative inline-flex select-none items-center justify-center whitespace-nowrap font-medium transition-all duration-150 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50',
+        'relative inline-flex select-none items-center justify-center whitespace-nowrap font-medium transition-all duration-150 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 motion-reduce:active:scale-100 [@media(pointer:coarse)]:min-h-[44px]',
         VARIANTS[variant],
         SIZES[size],
         className,
@@ -80,7 +80,7 @@ export function IconButton({
       aria-label={label}
       title={label}
       className={cn(
-        'inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted transition hover:bg-surface2 hover:text-fg active:scale-95 disabled:opacity-40',
+        'inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted transition hover:bg-surface2 hover:text-fg active:scale-95 disabled:opacity-40 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11',
         className,
       )}
       {...rest}
@@ -108,7 +108,7 @@ export function Card({
 export function CardHeader({ title, subtitle, action, icon }: { title: ReactNode; subtitle?: ReactNode; action?: ReactNode; icon?: ReactNode }) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-5 py-4">
-      <div className="flex min-w-0 flex-1 items-start gap-3">
+      <div className="flex min-w-0 flex-1 basis-[240px] items-start gap-3">
         {icon && <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface2 text-muted">{icon}</div>}
         <div className="min-w-0">
           <h3 className="section-title">{title}</h3>
@@ -398,11 +398,48 @@ export function Stat({
 }
 
 /* ------------------------------------------------------------------ Tooltip (portal, hover + focus) */
-export function Tooltip({ content, children, className }: { content: ReactNode; children: ReactNode; className?: string }) {
+const FOCUSABLE_SEL = 'a[href],button,input,select,textarea,[tabindex]:not([tabindex="-1"])';
+
+/**
+ * Brief tip shown ~300 ms after hover or keyboard focus. `aria-describedby`
+ * is attached to the actual interactive control inside (not the wrapper);
+ * Escape dismisses. Never use it for information that is essential — show
+ * that inline as well.
+ */
+export function Tooltip({ content, children, className, delay = 300 }: { content: ReactNode; children: ReactNode; className?: string; delay?: number }) {
   const id = useId();
   const ref = useRef<HTMLSpanElement>(null);
+  const timer = useRef<number | null>(null);
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ x: number; y: number; below: boolean }>({ x: 0, y: 0, below: false });
+  const show = () => {
+    if (timer.current) window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setOpen(true), delay);
+  };
+  const hide = () => {
+    if (timer.current) window.clearTimeout(timer.current);
+    setOpen(false);
+  };
+  useEffect(() => () => void (timer.current && window.clearTimeout(timer.current)), []);
+  // describe the real control, not the wrapper
+  useEffect(() => {
+    const host = ref.current;
+    if (!host) return;
+    const target = (host.matches(FOCUSABLE_SEL) ? host : host.querySelector<HTMLElement>(FOCUSABLE_SEL)) ?? host;
+    const prev = target.getAttribute('aria-describedby');
+    target.setAttribute('aria-describedby', [prev, id].filter(Boolean).join(' '));
+    return () => {
+      const cur = (target.getAttribute('aria-describedby') ?? '').split(' ').filter((x) => x && x !== id);
+      if (cur.length) target.setAttribute('aria-describedby', cur.join(' '));
+      else target.removeAttribute('aria-describedby');
+    };
+  }, [id]);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
   useLayoutEffect(() => {
     if (!open || !ref.current) return;
     const r = ref.current.getBoundingClientRect();
@@ -410,28 +447,23 @@ export function Tooltip({ content, children, className }: { content: ReactNode; 
     setPos({ x: Math.min(Math.max(r.left + r.width / 2, 150), window.innerWidth - 150), y: below ? r.bottom + 8 : r.top - 8, below });
   }, [open]);
   return (
-    <span
-      ref={ref}
-      className={cn('inline-flex', className)}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-      onFocus={() => setOpen(true)}
-      onBlur={() => setOpen(false)}
-      aria-describedby={open ? id : undefined}
-    >
+    <span ref={ref} className={cn('inline-flex', className)} onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide}>
       {children}
-      {open &&
-        createPortal(
-          <span
-            id={id}
-            role="tooltip"
-            style={{ left: pos.x, top: pos.y, transform: `translate(-50%, ${pos.below ? '0' : '-100%'})` }}
-            className="pointer-events-none fixed z-[100] max-w-[280px] rounded-lg bg-[#0E1320] px-3 py-2 text-xs leading-relaxed text-white shadow-lift dark:bg-white dark:text-[#0E1320]"
-          >
-            {content}
-          </span>,
-          document.body,
-        )}
+      {/* always in the DOM (visually hidden when closed) so aria-describedby resolves for screen readers */}
+      {createPortal(
+        <span
+          id={id}
+          role="tooltip"
+          style={{ left: pos.x, top: pos.y, transform: `translate(-50%, ${pos.below ? '0' : '-100%'})` }}
+          className={cn(
+            'pointer-events-none fixed z-[100] max-w-[280px] rounded-lg bg-[#0E1320] px-3 py-2 text-xs leading-relaxed text-white shadow-lift dark:bg-white dark:text-[#0E1320]',
+            open ? 'opacity-100' : 'sr-only opacity-0',
+          )}
+        >
+          {content}
+        </span>,
+        document.body,
+      )}
     </span>
   );
 }

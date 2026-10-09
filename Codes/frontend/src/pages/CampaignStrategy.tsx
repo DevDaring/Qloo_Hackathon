@@ -28,13 +28,14 @@ import { SERIES } from '../components/ExplorerCharts';
 import { MapView } from '../components/MapView';
 import { ConfirmDialog } from '../components/Overlay';
 import { useProjectCtx } from '../components/ProjectContext';
+import { Editable, LockNote, useLocked } from '../components/Locked';
 import { useToast } from '../components/Toast';
 import { Badge, Button, Callout, Card, CardHeader, EmptyState, ErrorState, PageHeader, Select, SkeletonCard, Table, Tabs, Td, Th, Textarea, Tooltip } from '../components/ui';
 import { cn, fmtDate, fmtMoney, humanize } from '../lib/format';
 import { PLACEMENT_STATUS, ROLE_LABEL } from '../lib/labels';
 
 export default function CampaignStrategy() {
-  const { pid } = useProjectCtx();
+  const { pid, sel, setSel } = useProjectCtx();
   const q = useStrategies(pid);
   const [params, setParams] = useSearchParams();
   const groups = useMemo(() => {
@@ -45,7 +46,12 @@ export default function CampaignStrategy() {
     }
     return Array.from(m.entries());
   }, [q.data]);
-  const tab = params.get('pair') ?? groups[0]?.[0];
+  // default to the shared working context (city × audience) when it matches a strategy
+  const ctxPair = groups.find(([k]) => {
+    const [a, au] = k.split('|');
+    return (!sel.areaId || a === sel.areaId) && (!sel.audienceId || au === sel.audienceId);
+  })?.[0];
+  const tab = params.get('pair') ?? ctxPair ?? groups[0]?.[0];
   const versions = groups.find(([k]) => k === tab)?.[1] ?? [];
   const sid = params.get('s') && versions.some((v) => v.id === params.get('s')) ? params.get('s')! : versions[0]?.id;
 
@@ -68,7 +74,11 @@ export default function CampaignStrategy() {
           <Tabs
             className="mb-6"
             value={tab ?? ''}
-            onChange={(k) => setParams({ pair: k })}
+            onChange={(k) => {
+              setParams({ pair: k });
+              const [a, au] = k.split('|');
+              setSel({ areaId: a, audienceId: au });
+            }}
             tabs={groups.map(([k, vs]) => ({
               key: k,
               label: (
@@ -187,9 +197,11 @@ function StrategyView({ sid }: { sid: string }) {
             </div>
             <div className="flex flex-wrap gap-2">
               <EvidenceChip ids={s.evidence_ids} title="All evidence behind this strategy" label={`All ${s.evidence_ids.length} evidence`} />
-              <Button size="sm" variant="outline" icon={<RefreshCw className="h-3.5 w-3.5" />} disabled={!s.run_id} onClick={() => setRegen(true)}>
-                Regenerate
-              </Button>
+              <Editable>
+                <Button size="sm" variant="outline" icon={<RefreshCw className="h-3.5 w-3.5" />} disabled={!s.run_id} onClick={() => setRegen(true)}>
+                  Regenerate
+                </Button>
+              </Editable>
             </div>
           </div>
         </div>
@@ -314,9 +326,14 @@ function StrategyView({ sid }: { sid: string }) {
         </Card>
       </div>
 
-      <Callout tone="neutral" icon={<FileText className="h-4 w-4" />} title="Placement brief & outreach draft (not sent)" action={<Link to={`/projects/${pid}/assets`}><Button size="sm" variant="outline">Assets & exports</Button></Link>}>
-        The campaign package includes a placement brief and an outreach draft for your shortlisted placements. LaunchLens never contacts businesses or buys ads — you send anything yourself.
-      </Callout>
+      <div id="handoff" className="scroll-mt-28 space-y-3">
+        <Callout tone="brand" icon={<FileText className="h-4 w-4" />} title="Turn this strategy into ads" action={<Link to={`/projects/${pid}/studio`}><Button size="sm" variant="brand">Open Ad studio</Button></Link>}>
+          Write a creative brief from this strategy in the Ad studio (“New brief from strategy”). Briefs need your approval before any image or video is generated.
+        </Callout>
+        <Callout tone="neutral" icon={<FileText className="h-4 w-4" />} title="Placement brief & outreach draft (not sent)" action={<Link to={`/projects/${pid}/assets`}><Button size="sm" variant="outline">Assets & exports</Button></Link>}>
+          The campaign package includes a placement brief and an outreach draft for your shortlisted placements. LaunchLens never contacts businesses or buys ads — you send anything yourself.
+        </Callout>
+      </div>
 
       <ConfirmDialog
         open={regen}
@@ -423,6 +440,7 @@ function PlacementsSection({ s }: { s: StrategyDetail }) {
       evidence_id: null,
     }));
   const short = new Set((q.data?.items ?? []).filter((p) => p.shortlisted).map((p) => p.id));
+  const locked = useLocked();
   const doPatch = (id: string, b: Parameters<typeof mutations.patchPlacement>[1], ok?: string) =>
     patch.mutate({ id, b }, { onSuccess: () => ok && toast.success(ok), onError: (e) => toast.error('Could not update placement', e) });
 
@@ -442,7 +460,8 @@ function PlacementsSection({ s }: { s: StrategyDetail }) {
       {q.error && <div className="p-5"><ErrorState error={q.error} onRetry={() => q.refetch()} /></div>}
       {q.data && (
         <div className="grid gap-4 p-4 2xl:grid-cols-[minmax(0,1fr)_400px]">
-          <div className="min-w-0">
+          <fieldset disabled={locked} className="m-0 min-w-0 border-0 p-0">
+            {locked && <LockNote className="mb-2 max-w-none">Read-only sample: shortlist, status and verification are shown as recorded. Duplicate the project to change them.</LockNote>}
             <Table caption="Placement comparison">
               <thead>
                 <tr>
@@ -526,7 +545,7 @@ function PlacementsSection({ s }: { s: StrategyDetail }) {
                 </span>
               ))}
             </div>
-          </div>
+          </fieldset>
           <div className="overflow-hidden rounded-2xl border border-line">
             {mapErr || !cfg ? (
               <div className="p-4 text-xs text-muted">{mapErr ?? 'Loading map…'}</div>

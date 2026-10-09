@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   CircleHelp,
@@ -7,6 +7,7 @@ import {
   History,
   ImageIcon,
   ListChecks,
+  Lock,
   Package,
   Save,
   ScrollText,
@@ -20,10 +21,12 @@ import type { Schemas } from '../api/client';
 import { mutations, useApiMutation, useClaims, useConstraints, useProduct, usePublicConfig } from '../api/hooks';
 import type { Claim, Feature, Product, Region } from '../api/types';
 import { PageWrap } from '../components/AppShell';
+import { InteractiveMedia } from '../components/InteractiveMedia';
 import { EvidenceBadge } from '../components/Evidence';
 import { AddRow, Dropzone, RegionList, TagInput, fieldErrors } from '../components/FormBits';
 import { Modal } from '../components/Overlay';
 import { useProjectCtx } from '../components/ProjectContext';
+import { useLocked } from '../components/Locked';
 import { useToast } from '../components/Toast';
 import {
   Badge,
@@ -49,7 +52,12 @@ type Tab = 'facts' | 'claims' | 'uploads' | 'constraints' | 'versions';
 
 export default function ProductBrief() {
   const [params, setParams] = useSearchParams();
-  const tab = (params.get('tab') as Tab) || 'facts';
+  const loc = useLocation();
+  // journey deep links: brief#product, brief#constraints, brief#media open the matching tab
+  const hashTab = ({ product: 'facts', constraints: 'constraints', media: 'uploads' } as Record<string, Tab>)[loc.hash.replace('#', '')];
+  const tab = (params.get('tab') as Tab) || hashTab || 'facts';
+  const locked = useLocked();
+  const anchor = ({ facts: 'product', constraints: 'constraints', uploads: 'media' } as Partial<Record<Tab, string>>)[tab];
   const setTab = (t: Tab) => setParams(t === 'facts' ? {} : { tab: t }, { replace: true });
   const { project } = useProjectCtx();
   const openQ = (project?.product?.open_questions.length ?? 0) + (project?.product?.features.reduce((n, f) => n + f.critical_unknowns.length, 0) ?? 0);
@@ -73,12 +81,19 @@ export default function ProductBrief() {
         />
       </PageHeader>
       <AnimatePresence mode="wait">
-        <motion.div key={tab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2 }}>
-          {tab === 'facts' && <FactsTab />}
-          {tab === 'claims' && <ClaimsTab />}
-          {tab === 'uploads' && <UploadsTab />}
-          {tab === 'constraints' && <ConstraintsTab />}
-          {tab === 'versions' && <VersionsTab />}
+        <motion.div key={tab} id={anchor} className="scroll-mt-28" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2 }}>
+          {locked && tab !== 'versions' && (
+            <p className="mb-4 flex items-center gap-2 rounded-xl border border-accent/25 bg-accent-soft/40 px-3 py-2 text-[13px]" role="note">
+              <Lock className="h-3.5 w-3.5 text-accent-ink" aria-hidden /> Read-only sample: the brief is shown as it was used for the research. Duplicate the project to edit it.
+            </p>
+          )}
+          <fieldset disabled={locked} className="m-0 min-w-0 border-0 p-0">
+            {tab === 'facts' && <FactsTab />}
+            {tab === 'claims' && <ClaimsTab />}
+            {tab === 'uploads' && <UploadsTab />}
+            {tab === 'constraints' && <ConstraintsTab />}
+            {tab === 'versions' && <VersionsTab />}
+          </fieldset>
         </motion.div>
       </AnimatePresence>
     </PageWrap>
@@ -620,6 +635,8 @@ function UploadsTab() {
   const toast = useToast();
   const up = useApiMutation((f: File) => mutations.upload(pid, role, f, primary), [['project', pid], ['assets', pid]]);
   const assets = project?.product_assets ?? [];
+  const imageAssets = assets.filter((a) => a.role === 'product_photo' || a.role === 'logo');
+  const mediaItems = imageAssets.map((a) => ({ src: `/api/v1/assets/${a.asset_id}/download`, alt: `${humanize(a.role)} (original upload)`, caption: a.is_primary ? 'Primary product photo' : humanize(a.role), meta: 'Immutable original upload' }));
   const accept = role === 'document' ? '.pdf,.txt,application/pdf,text/plain' : role === 'audio' ? 'audio/mpeg,audio/wav,.mp3,.wav' : 'image/png,image/jpeg,image/webp';
   return (
     <div className="grid gap-6 lg:grid-cols-[380px_minmax(0,1fr)]">
@@ -663,24 +680,35 @@ function UploadsTab() {
             <EmptyState title="Nothing uploaded yet">A product photo is needed for flyers and video end cards.</EmptyState>
           ) : (
             <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
-              {assets.map((a) => (
-                <motion.li key={a.asset_id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="group overflow-hidden rounded-2xl border border-line bg-surface">
-                  <div className="relative flex aspect-square items-center justify-center bg-[conic-gradient(at_50%_50%,#f3f4f7_25%,#fff_0_50%,#f3f4f7_0_75%,#fff_0)] bg-[length:20px_20px] dark:bg-surface2">
-                    {a.role === 'product_photo' || a.role === 'logo' ? (
-                      <img src={`/api/v1/assets/${a.asset_id}/download`} alt={`${humanize(a.role)} upload`} loading="lazy" className="h-full w-full object-contain p-3 transition group-hover:scale-105" />
+              {assets.map((a) => {
+                const isImg = a.role === 'product_photo' || a.role === 'logo';
+                const imgIdx = imageAssets.findIndex((x) => x.asset_id === a.asset_id);
+                return (
+                  <li key={a.asset_id} className="overflow-hidden rounded-2xl border border-line bg-surface">
+                    {isImg ? (
+                      <InteractiveMedia
+                        items={mediaItems}
+                        index={imgIdx}
+                        aspect="aspect-square"
+                        fit="contain"
+                        frameClassName="rounded-none border-0 bg-[conic-gradient(at_50%_50%,#f3f4f7_25%,#fff_0_50%,#f3f4f7_0_75%,#fff_0)] bg-[length:20px_20px] dark:bg-surface2"
+                        showCaption={false}
+                        badge={a.is_primary ? <Badge tone="brand">Primary</Badge> : undefined}
+                      />
                     ) : (
-                      <FileText className="h-10 w-10 text-subtle" />
+                      <div className="flex aspect-square items-center justify-center bg-surface2">
+                        <FileText className="h-10 w-10 text-subtle" />
+                      </div>
                     )}
-                    {a.is_primary && <Badge tone="brand" className="absolute left-2 top-2">Primary</Badge>}
-                  </div>
-                  <div className="flex items-center justify-between gap-2 px-3 py-2">
-                    <span className="text-xs font-semibold">{humanize(a.role)}</span>
-                    <a className="link text-xs" href={`/api/v1/assets/${a.asset_id}/download?attachment=true`}>
-                      Download
-                    </a>
-                  </div>
-                </motion.li>
-              ))}
+                    <div className="flex items-center justify-between gap-2 px-3 py-2">
+                      <span className="text-xs font-semibold">{humanize(a.role)}</span>
+                      <a className="link text-xs" href={`/api/v1/assets/${a.asset_id}/download?attachment=true`}>
+                        Download
+                      </a>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

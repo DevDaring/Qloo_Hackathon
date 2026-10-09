@@ -91,6 +91,7 @@ function EvidenceDrawer({ projectId, state, onClose }: { projectId?: string; sta
       title={state?.title ?? 'Evidence'}
       subtitle={<span>Source, date, scope and limitations for each cited item. Raw provider payloads stay in diagnostics.</span>}
       width="max-w-xl"
+      layer="z-[85]"
     >
       {q.isLoading && (
         <div className="space-y-3">

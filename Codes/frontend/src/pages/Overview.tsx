@@ -13,6 +13,7 @@ import {
   Package,
   Play,
   Scale,
+  Sparkles,
   Store,
   Target,
   Users,
@@ -20,7 +21,13 @@ import {
 } from 'lucide-react';
 import { mutations, pickDefaultRun, useApiMutation, useRun, useRuns } from '../api/hooks';
 import { PageWrap } from '../components/AppShell';
+import { ActionPreview } from '../components/ActionPreview';
+import { InteractiveMedia } from '../components/InteractiveMedia';
+import { researchPrereqs } from '../hooks/useJourney';
+import { useFirstVisit } from '../hooks/useTheme';
 import { ConsultPanel } from '../components/ConsultPanel';
+import { OpportunitiesCard } from '../components/Opportunities';
+import { QlooImpactCard } from '../components/QlooImpact';
 import { useProjectCtx } from '../components/ProjectContext';
 import { StageTimeline } from '../components/StageTimeline';
 import { useToast } from '../components/Toast';
@@ -28,13 +35,17 @@ import { Badge, Button, Card, CardHeader, ErrorState, PageHeader, Skeleton, Stat
 import { cn, fmtMoney, shortId, timeAgo } from '../lib/format';
 
 export default function Overview() {
-  const { pid, project, openDecision, setConsoleRunId } = useProjectCtx();
+  const { pid, project, openDecision, setConsoleRunId, sel } = useProjectCtx();
   const runs = useRuns(pid);
-  const latest = runs.data?.items[0];
-  const best = pickDefaultRun(runs.data?.items);
+  const newest = runs.data?.items[0];
+  const best = pickDefaultRun(runs.data?.items, sel.runId);
+  // the run worth looking at (newest with research results); a newer experiment arm is mentioned, not shown
+  const latest = best ?? newest;
   const rd = useRun(latest?.id);
-  const bestRun = useRun(best?.id !== latest?.id ? best?.id : undefined);
+  const bestRun = rd;
+  const locked = !!project?.locked;
   const toast = useToast();
+  const firstVisit = useFirstVisit(`ll-overview-reveal-${pid}`);
   const start = useApiMutation(() => mutations.startRun(pid), [['project', pid], ['runs', pid]]);
 
   if (!project)
@@ -50,6 +61,7 @@ export default function Overview() {
   const photo = project.product_assets.find((a) => a.role === 'product_photo' && a.is_primary) ?? project.product_assets.find((a) => a.role === 'product_photo');
   const openQ = (p?.open_questions ?? []).length + (p?.features ?? []).reduce((n, f) => n + f.critical_unknowns.length, 0);
   const ready = !!p && !!c && project.audiences.length > 0;
+  const prereqs = researchPrereqs(project);
   const checklist = [
     { ok: !!p, label: 'Product brief', detail: p ? `v${p.version} · ${p.features.length} features` : 'Not saved yet', to: 'brief' },
     { ok: openQ === 0, warn: openQ > 0, label: 'Open questions', detail: openQ ? `${openQ} to answer (claims stay blocked)` : 'None', to: 'brief' },
@@ -74,34 +86,46 @@ export default function Overview() {
         description={project.goal}
         actions={
           <>
-            <Link to={`/projects/${pid}/explorer`}>
-              <Button variant="outline" icon={<MapIcon className="h-4 w-4" />}>
-                Market explorer
-              </Button>
-            </Link>
-            <Button
-              variant="brand"
-              icon={<Play className="h-4 w-4" />}
-              disabled={!ready}
-              title={ready ? undefined : 'Save the product brief, constraints and at least one audience first'}
-              loading={start.isPending}
-              onClick={() =>
-                start.mutate(undefined, {
-                  onSuccess: (r) => {
-                    setConsoleRunId(r.run.id);
-                    toast.success('Research started', 'Follow each stage in the run console below.');
-                  },
-                  onError: (e) => toast.error('Could not start research', e),
-                })
+            <ActionPreview tip="Compare this research snapshot with a practical baseline (the same run without Qloo taste signals).">
+              <Link to={`/projects/${pid}/compare?view=impact`} className="inline-flex h-10 items-center gap-2 rounded-xl border border-line bg-surface px-4 text-sm font-medium transition hover:border-fg/30 hover:bg-surface2 [@media(pointer:coarse)]:min-h-[44px]">
+                <Sparkles className="h-4 w-4 text-violet-600" /> See what Qloo changed
+              </Link>
+            </ActionPreview>
+            <ActionPreview
+              tip="Find places and audience matches for your selected cities."
+              title="Start research"
+              details={
+                <>
+                  <p>Retrieves places and climate evidence for each candidate city, Qloo taste signals for each audience, then pauses for you to choose city × audience pairs.</p>
+                  <p>No images or videos are generated and nothing is bought. Progress appears in the run console.</p>
+                </>
               }
+              disabledReason={prereqs.length ? `First ${prereqs.join(', ')}.` : undefined}
+              edit
             >
-              Start research
-            </Button>
+              <Button
+                variant="outline"
+                icon={<Play className="h-4 w-4" />}
+                disabled={prereqs.length > 0}
+                loading={start.isPending}
+                onClick={() =>
+                  start.mutate(undefined, {
+                    onSuccess: (r) => {
+                      setConsoleRunId(r.run.id);
+                      toast.success('Research started', 'Follow each stage in the run console below.');
+                    },
+                    onError: (e) => toast.error('Could not start research', e),
+                  })
+                }
+              >
+                Start research
+              </Button>
+            </ActionPreview>
           </>
         }
       />
 
-      <motion.div variants={stagger(0.06)} initial="hidden" animate="show" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <motion.div variants={stagger(0.06)} initial={firstVisit ? 'hidden' : false} animate="show" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <motion.div variants={fadeUp}>
           <Stat label="Places retrieved" value={counts.places ?? null} sub="Retrieved set, not a census" icon={<MapPinned className="h-4 w-4" />} tone="brand" />
         </motion.div>
@@ -119,12 +143,16 @@ export default function Overview() {
       <div className="mt-6">
           <Card>
           <CardHeader
-            title="Latest research run"
-            subtitle={latest ? `Run ${shortId(latest.id)} · started ${timeAgo(latest.created_at)}${latest.qloo_enabled ? '' : ' · without Qloo (experiment)'}` : 'No run yet'}
+            title={latest && newest && latest.id !== newest.id ? 'Research run' : 'Latest research run'}
+            subtitle={
+              latest
+                ? `Run ${shortId(latest.id)} · started ${timeAgo(latest.created_at)}${latest.qloo_enabled ? '' : ' · without Qloo (experiment)'}${newest && newest.id !== latest.id ? ` · newer run ${shortId(newest.id)}: ${newest.qloo_enabled ? '' : 'practical baseline, '}${newest.status.replace(/_/g, ' ')}` : ''}`
+                : 'No run yet'
+            }
             action={
               run?.status === 'waiting_for_user' ? (
-                <Button size="sm" variant="brand" icon={<Hand className="h-3.5 w-3.5" />} onClick={() => openDecision(run.id)}>
-                  Decide
+                <Button size="sm" variant={locked ? 'outline' : 'brand'} icon={<Hand className="h-3.5 w-3.5" />} onClick={() => openDecision(run.id)}>
+                  {locked ? 'View decision' : 'Decide'}
                 </Button>
               ) : run ? (
                 <StatusPill status={run.status} />
@@ -195,6 +223,8 @@ export default function Overview() {
             </Card>
           )}
 
+          <QlooImpactCard />
+          <OpportunitiesCard runId={best?.qloo_enabled ? best.id : undefined} />
           <QuickNav pid={pid} />
         </div>
 
@@ -227,7 +257,12 @@ export default function Overview() {
             <Card className="overflow-hidden">
               <div className="flex gap-4 p-5">
                 {photo ? (
-                  <img src={`/api/v1/assets/${photo.asset_id}/download`} alt={`${p.name} product photo`} className="h-24 w-24 shrink-0 rounded-xl border border-line bg-surface2 object-contain" />
+                  <InteractiveMedia
+                    className="w-24 shrink-0"
+                    items={[{ src: `/api/v1/assets/${photo.asset_id}/download`, alt: `${p.name} product photo`, caption: 'Primary product photo (original upload)' }]}
+                    fit="contain"
+                    showCaption={false}
+                  />
                 ) : (
                   <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-xl bg-surface2">
                     <Package className="h-6 w-6 text-subtle" />

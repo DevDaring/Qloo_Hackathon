@@ -753,7 +753,11 @@ export interface paths {
         /** List Experiments */
         get: operations["list_experiments_api_v1_projects__project_id__experiments_get"];
         put?: never;
-        /** Create Experiment */
+        /**
+         * Create Experiment
+         * @description Start the no-Qloo arm from the baseline's immutable snapshot and its
+         *     pinned practical evidence; later project edits cannot leak in.
+         */
         post: operations["create_experiment_api_v1_projects__project_id__experiments_post"];
         delete?: never;
         options?: never;
@@ -791,7 +795,11 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Rate Experiment */
+        /**
+         * Rate Experiment
+         * @description Blind preference: rate shortlist A and B without knowing which used Qloo;
+         *     the mapping is revealed once both are rated (or on explicit reveal).
+         */
         patch: operations["rate_experiment_api_v1_experiments__experiment_id__ratings_patch"];
         trace?: never;
     };
@@ -1196,6 +1204,141 @@ export interface paths {
         get: operations["usage_api_v1_usage_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/taste-story": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Taste Story
+         * @description Feature A: selected interests → Qloo recommendations → shortlisted place →
+         *     campaign hypothesis → creative preview. Every edge is typed and evidence-backed.
+         */
+        get: operations["taste_story_api_v1_runs__run_id__taste_story_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/audience-compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Audience Compare */
+        get: operations["audience_compare_api_v1_runs__run_id__audience_compare_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/opportunities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Opportunities */
+        get: operations["opportunities_api_v1_runs__run_id__opportunities_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/revisions/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revision Preview
+         * @description Dry run of a revision: what would become stale or re-run. Writes nothing.
+         */
+        post: operations["revision_preview_api_v1_projects__project_id__revisions_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/creative-briefs/{brief_id}/trace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Creative Trace
+         * @description Feature D: copy → decisions → strategy → product facts and evidence, plus the pilot hypothesis card.
+         */
+        get: operations["creative_trace_api_v1_creative_briefs__brief_id__trace_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/journey": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Journey */
+        get: operations["journey_api_v1_projects__project_id__journey_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/duplicate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Duplicate Project
+         * @description Copy the project's current inputs and decisions (product facts, claims,
+         *     product media, constraints, audiences and their resolved interests) into a
+         *     new editable project. Research results are not copied: running research on
+         *     the copy reuses cached provider responses.
+         */
+        post: operations["duplicate_project_api_v1_projects__project_id__duplicate_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1692,16 +1835,6 @@ export interface components {
             /** Status */
             status?: string | null;
         };
-        /** RatingIn */
-        RatingIn: {
-            /**
-             * Ratings
-             * @description area_id -> owner relevance rating 1-5
-             */
-            ratings: {
-                [key: string]: number;
-            };
-        };
         /** ReconcileIn */
         ReconcileIn: {
             /**
@@ -1929,6 +2062,23 @@ export interface components {
             regenerate: boolean;
             /** Idempotency Key */
             idempotency_key?: string | null;
+        };
+        /** _BlindRating */
+        _BlindRating: {
+            /** A */
+            A?: number | null;
+            /** B */
+            B?: number | null;
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
+            /**
+             * Reveal
+             * @default false
+             */
+            reveal: boolean;
         };
     };
     responses: never;
@@ -3774,7 +3924,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["RatingIn"];
+                "application/json": components["schemas"]["_BlindRating"];
             };
         };
         responses: {
@@ -4710,6 +4860,235 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    taste_story_api_v1_runs__run_id__taste_story_get: {
+        parameters: {
+            query: {
+                area_id: string;
+                audience_version_id: string;
+                place_id?: string | null;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    audience_compare_api_v1_runs__run_id__audience_compare_get: {
+        parameters: {
+            query: {
+                area_id: string;
+                a: string;
+                b: string;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    opportunities_api_v1_runs__run_id__opportunities_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revision_preview_api_v1_projects__project_id__revisions_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevisionApplyIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    creative_trace_api_v1_creative_briefs__brief_id__trace_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                brief_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    journey_api_v1_projects__project_id__journey_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    duplicate_project_api_v1_projects__project_id__duplicate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };

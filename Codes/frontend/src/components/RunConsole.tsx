@@ -5,6 +5,9 @@ import { isActiveRun, mutations, useApiMutation, useRun } from '../api/hooks';
 import type { RunEvent } from '../api/types';
 import { cn, fmtTime, humanize, shortId, timeAgo } from '../lib/format';
 import { STAGES } from '../lib/labels';
+import { researchPrereqs } from '../hooks/useJourney';
+import { Editable } from './Locked';
+import { ActionPreview } from './ActionPreview';
 import { useProjectCtx } from './ProjectContext';
 import { StageTimeline } from './StageTimeline';
 import { ConfirmDialog } from './Overlay';
@@ -81,8 +84,8 @@ export function RunConsole() {
             <div className="flex shrink-0 items-center gap-1.5">
               <span className="hidden md:inline-flex">{streamBadge}</span>
               {waiting && (
-                <Button size="sm" variant="brand" icon={<Hand className="h-3.5 w-3.5" />} onClick={() => openDecision(run?.id)}>
-                  <span className="hidden sm:inline">Decide</span>
+                <Button size="sm" variant={project?.locked ? 'outline' : 'brand'} icon={<Hand className="h-3.5 w-3.5" />} onClick={() => openDecision(run?.id)}>
+                  <span className="hidden sm:inline">{project?.locked ? 'View decision' : 'Decide'}</span>
                 </Button>
               )}
               <button
@@ -126,15 +129,19 @@ export function RunConsole() {
                       <span className="md:hidden">{streamBadge}</span>
                       <div className="ml-auto flex gap-1.5">
                         {active && (
-                          <Button size="sm" variant="outline" icon={<CircleStop className="h-3.5 w-3.5" />} onClick={() => setConfirmCancel(true)}>
-                            Cancel run
-                          </Button>
+                          <Editable>
+                            <Button size="sm" variant="outline" icon={<CircleStop className="h-3.5 w-3.5" />} onClick={() => setConfirmCancel(true)}>
+                              Cancel run
+                            </Button>
+                          </Editable>
                         )}
                         {!active && (
+                          <ActionPreview edit inlineReason={false} tip="Find places and audience matches for your selected cities." disabledReason={researchPrereqs(project).length ? `First ${researchPrereqs(project).join(', ')}.` : undefined}>
                           <Button
                             size="sm"
                             variant="outline"
                             icon={<Play className="h-3.5 w-3.5" />}
+                            disabled={researchPrereqs(project).length > 0}
                             loading={start.isPending}
                             onClick={() =>
                               start.mutate(undefined, {
@@ -148,6 +155,7 @@ export function RunConsole() {
                           >
                             New research run
                           </Button>
+                          </ActionPreview>
                         )}
                       </div>
                     </div>

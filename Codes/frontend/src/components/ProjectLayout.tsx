@@ -1,4 +1,4 @@
-import { Suspense, useMemo, useState } from 'react';
+import { Suspense, useCallback, useMemo, useState } from 'react';
 import { Outlet, useLocation, useParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Hand } from 'lucide-react';
@@ -6,7 +6,10 @@ import { useProject } from '../api/hooks';
 import { useProjectEvents } from '../hooks/useProjectEvents';
 import { DecisionPanel } from './DecisionPanel';
 import { EvidenceProvider } from './Evidence';
-import { ProjectContext, type ProjectCtx } from './ProjectContext';
+import { ProjectContext, loadSelection, saveSelection, type ProjectCtx, type Selection } from './ProjectContext';
+import { JourneyHeader } from './JourneyBar';
+import { LockedBanner } from './Locked';
+import { useHashTarget } from '../hooks/useHashTarget';
 import { RunConsole } from './RunConsole';
 import { Button, ErrorState, Skeleton } from './ui';
 
@@ -18,7 +21,24 @@ export function ProjectLayout() {
   const [decisionRun, setDecisionRun] = useState<string | undefined>();
   const [decisionOpen, setDecisionOpen] = useState(false);
   const [consoleRunId, setConsoleRunId] = useState<string | undefined>();
+  const [sel, setSelState] = useState<Selection>(() => loadSelection(pid));
+  const setSel = useCallback(
+    (patch: Partial<Selection>) =>
+      setSelState((cur) => {
+        const next = { ...cur, ...patch };
+        saveSelection(pid, next);
+        return next;
+      }),
+    [pid],
+  );
   const waitingRunId = pq.data?.runs.find((r) => r.status === 'waiting_for_user')?.id;
+  // journey deep links: #decision opens the decision panel, other anchors scroll to and focus their target
+  useHashTarget((h) => {
+    if (h !== 'decision' || !waitingRunId) return false;
+    setDecisionRun(waitingRunId);
+    setDecisionOpen(true);
+    return true;
+  });
 
   const ctx = useMemo<ProjectCtx>(
     () => ({
@@ -33,8 +53,10 @@ export function ProjectLayout() {
       },
       consoleRunId,
       setConsoleRunId,
+      sel,
+      setSel,
     }),
-    [pid, pq.data, events, state, waitingRunId, consoleRunId],
+    [pid, pq.data, events, state, waitingRunId, consoleRunId, sel, setSel],
   );
 
   if (pq.error && (pq.error as { status?: number }).status === 404)
@@ -49,7 +71,7 @@ export function ProjectLayout() {
       <EvidenceProvider projectId={pid}>
         <div className="flex min-h-full flex-1 flex-col">
           <AnimatePresence>
-            {waitingRunId && (
+            {waitingRunId && !pq.data?.locked && (
               <motion.div
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
@@ -74,6 +96,8 @@ export function ProjectLayout() {
               </motion.div>
             )}
           </AnimatePresence>
+          {pq.data?.locked && <LockedBanner pid={pid} />}
+          <JourneyHeader />
           {pq.error && !pq.data && (
             <div className="mx-auto w-full max-w-[1440px] px-4 pt-6 sm:px-6 lg:px-10">
               <ErrorState error={pq.error} onRetry={() => pq.refetch()} />

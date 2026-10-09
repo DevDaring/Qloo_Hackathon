@@ -9,6 +9,7 @@ import type { BriefDetail, Orientation, Preset, TargetOption } from '../api/type
 import { cn, fmtUsd, humanize } from '../lib/format';
 import { LANG_LABEL, PRESETS, ROLE_LABEL } from '../lib/labels';
 import { Modal } from './Overlay';
+import { LockNote, useLocked } from './Locked';
 import { useToast } from './Toast';
 import { Badge, Button, Callout, Checkbox, EmptyState, ErrorState, Field, Input, SkeletonCard, StatusPill, Toggle } from './ui';
 
@@ -18,6 +19,7 @@ export function DecisionPanel({ pid, runId, open, onClose }: { pid: string; runI
   const pd = run?.pending_decision;
   const waiting = run?.status === 'waiting_for_user' && !!pd;
   const title = pd?.title ?? 'Decision';
+  const locked = useLocked();
   return (
     <Modal
       open={open}
@@ -29,6 +31,8 @@ export function DecisionPanel({ pid, runId, open, onClose }: { pid: string; runI
     >
       {rq.isLoading && <SkeletonCard lines={5} />}
       {rq.error && <ErrorState error={rq.error} onRetry={() => rq.refetch()} />}
+      {locked && waiting && <LockNote className="mb-3 max-w-none">Read-only sample: decisions are shown but can’t be made here. Duplicate the project to decide.</LockNote>}
+      <fieldset disabled={locked} className="m-0 min-w-0 border-0 p-0">
       {run && !waiting && (
         <EmptyState icon={<Check className="h-5 w-5" />} title="This run is not waiting for a decision">
           Current status: <StatusPill status={run.status} />
@@ -38,6 +42,7 @@ export function DecisionPanel({ pid, runId, open, onClose }: { pid: string; runI
       {run && waiting && pd?.type === 'entity_resolution' && <EntityDecision pid={pid} runId={run.id} onDone={onClose} />}
       {run && waiting && pd?.type === 'select_targets' && <SelectTargets runId={run.id} onDone={onClose} />}
       {run && waiting && pd?.type === 'creative_scope' && <CreativeScope pid={pid} runId={run.id} onDone={onClose} />}
+      </fieldset>
     </Modal>
   );
 }
