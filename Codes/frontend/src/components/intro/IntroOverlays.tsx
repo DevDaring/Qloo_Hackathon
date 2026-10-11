@@ -2,6 +2,7 @@ import { forwardRef, type CSSProperties, type ReactNode } from 'react';
 import { motion } from 'framer-motion';
 import { Play, X } from 'lucide-react';
 import { cn } from '../../lib/format';
+import { SpinningGlobe } from './SpinningGlobe';
 
 export type LngLat = [number, number];
 
@@ -229,15 +230,10 @@ export function Starfield({ className }: { className?: string }) {
 
 /** Meaningful poster while the globe loads: the real opening frame (NASA Blue Marble), placed where the globe appears. */
 export function GlobePoster() {
+  // animated from the first frame (no static poster); sized and placed like the MapLibre globe
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0">
-      <img
-        src="/landing/globe-poster.jpg"
-        alt=""
-        width={604}
-        height={604}
-        className="absolute left-1/2 top-[45%] w-[min(52vw,210px)] -translate-x-1/2 -translate-y-1/2 opacity-90 [mask-image:radial-gradient(circle,black_58%,transparent_70%)] lg:left-[69%] lg:top-[52%] lg:w-[min(28.6vw,45.5vh)]"
-      />
+      <SpinningGlobe />
     </div>
   );
 }

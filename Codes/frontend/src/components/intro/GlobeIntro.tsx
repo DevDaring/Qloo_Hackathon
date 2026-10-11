@@ -9,6 +9,7 @@ import maplibregl, { type GeoJSONSource, type Map as MLMap } from 'maplibre-gl';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { RotateCcw, SkipForward } from 'lucide-react';
 import { SPARKLE_CITIES } from './sparkleCities';
+import { introElapsed } from './SpinningGlobe';
 import { GlobePoster, BENGALURU, CHENNAI, DELHI, KOLKATA, MUMBAI, OVERLAYS, OverlayBody, OverlayShell, alignOf, type LngLat, type OverlaySpec } from './IntroOverlays';
 
 type Phase = 'globe' | 'night' | 'fly' | 'india' | 'idle';
@@ -413,6 +414,11 @@ export default function GlobeIntro({ styleUrl, onFallback }: { styleUrl: string;
       // a non-interactive map never collapses the compact attribution by itself
       m.getContainer().querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show');
       const go = () => {
+        if (!startAtEnd) {
+          // continue from the opening canvas globe's rotation instead of restarting the clock
+          tRef.current = Math.min(introElapsed(), T_NIGHT - 0.6);
+          m.jumpTo(camera(tRef.current));
+        }
         setReady(true);
         if (!startAtEnd) {
           try {
