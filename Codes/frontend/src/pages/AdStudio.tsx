@@ -59,7 +59,7 @@ import {
 } from '../components/ui';
 import { VideoPlayer } from '../components/VideoPlayer';
 import { cn, fmtUsd, humanize, timeAgo } from '../lib/format';
-import { angleOptions, LANG_LABEL, PRESETS } from '../lib/labels';
+import { angleOptions, LANG_LABEL, PRESETS, langRank } from '../lib/labels';
 
 const TRANSLATION: Record<string, { label: string; tone: 'ok' | 'warn' | 'neutral' | 'accent' }> = {
   source: { label: 'Source language', tone: 'neutral' },
@@ -79,10 +79,24 @@ export default function AdStudio() {
   const { pid, sel } = useProjectCtx();
   const q = useBriefs(pid);
   const [params, setParams] = useSearchParams();
-  const items = q.data?.items ?? [];
+  // switching variants keeps the open tab (?tab=…)
+  const switchBrief = (id: string) => {
+    const next = new URLSearchParams(params);
+    next.set('b', id);
+    setParams(next);
+  };
+  // English variants first (the default language), then Spanish, Hindi, Bengali
+  const items = [...(q.data?.items ?? [])].sort((a, b) => langRank(a.language) - langRank(b.language));
   // default: a brief in the working context, preferring one that already has a flyer to look at
   const inCtx = items.filter((b) => (!sel.areaId || b.area_id === sel.areaId) && (!sel.audienceId || b.audience_version_id === sel.audienceId));
-  const ctxBrief = (inCtx.find((b) => !b.stale && b.assets.some((a) => a.kind === 'flyer')) ?? inCtx[0])?.id;
+  const hasFlyer = (b: BriefListItem) => !b.stale && b.assets.some((a) => a.kind === 'flyer');
+  const ctxBrief = (
+    inCtx.find((b) => b.language === 'en' && hasFlyer(b)) ??
+    inCtx.find((b) => b.language === 'en') ??
+    items.find((b) => b.language === 'en' && hasFlyer(b)) ??
+    inCtx.find(hasFlyer) ??
+    inCtx[0]
+  )?.id;
   const bid = params.get('b') && items.some((b) => b.id === params.get('b')) ? params.get('b')! : ctxBrief ?? items[0]?.id;
   const [newOpen, setNewOpen] = useState(false);
   return (
@@ -90,10 +104,10 @@ export default function AdStudio() {
       <PageHeader
         eyebrow="Create"
         title="Ad studio"
-        description="Audience-specific flyers and videos. Copy is rendered deterministically on top of Grok Imagine imagery (via NanoGPT), checked for quality and claims, and never auto-approved."
+        description="Audience-specific flyers and videos. Copy is rendered deterministically on top of Grok Imagine imagery (xAI, with NanoGPT and OpenRouter as backups), checked for quality and claims, and never auto-approved."
         actions={
           <Editable note>
-            <Button variant="brand" icon={<Plus className="h-4 w-4" />} onClick={() => setNewOpen(true)}>
+            <Button id="new-brief" variant="brand" icon={<Plus className="h-4 w-4" />} onClick={() => setNewOpen(true)}>
               New brief from strategy
             </Button>
           </Editable>
@@ -117,20 +131,20 @@ export default function AdStudio() {
       )}
       {items.length > 0 && (
         <>
-          <section aria-label="Audience variants" className="mb-6">
+          <section id="variants" aria-label="Audience variants" className="mb-6 scroll-mt-28">
             <div className="mb-2 flex items-center justify-between">
               <p className="eyebrow">Audience variants · {items.length}</p>
               <p className="text-xs text-subtle">Each variant is its own campaign identity: product version × location × audience × language × angle.</p>
             </div>
             <div className="scroll-thin -mx-1 flex gap-3 overflow-x-auto px-1 pb-2">
               {items.map((b) => (
-                <VariantCard key={b.id} b={b} active={b.id === bid} onClick={() => setParams({ b: b.id })} />
+                <VariantCard key={b.id} b={b} active={b.id === bid} onClick={() => switchBrief(b.id)} />
               ))}
             </div>
           </section>
           <AnimatePresence mode="wait">
             <motion.div key={bid} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-              {bid && <BriefWorkspace bid={bid} onSwitch={(id) => setParams({ b: id })} />}
+              {bid && <BriefWorkspace bid={bid} onSwitch={switchBrief} />}
             </motion.div>
           </AnimatePresence>
         </>
@@ -174,12 +188,22 @@ function VariantCard({ b, active, onClick }: { b: BriefListItem; active: boolean
 }
 
 type Tab = 'why' | 'copy' | 'storyboard' | 'video' | 'decisions' | 'jobs';
+const TABS: Tab[] = ['why', 'copy', 'storyboard', 'video', 'decisions', 'jobs'];
 
 function BriefWorkspace({ bid, onSwitch }: { bid: string; onSwitch: (id: string) => void }) {
   const { pid } = useProjectCtx();
   const q = useBrief(bid);
   const [preset, setPreset] = useState<Preset>('square');
-  const [tab, setTab] = useState<Tab>('why');
+  // the side-panel tab lives in the URL (?tab=video), so links and "Show me" can open it directly
+  const [params, setParams] = useSearchParams();
+  const urlTab = params.get('tab') as Tab | null;
+  const tab: Tab = urlTab && TABS.includes(urlTab) ? urlTab : 'why';
+  const setTab = (t: Tab) => {
+    const next = new URLSearchParams(params);
+    if (t === 'why') next.delete('tab');
+    else next.set('tab', t);
+    setParams(next, { replace: true });
+  };
   const [imgOpen, setImgOpen] = useState<{ presets: Preset[]; regen: boolean } | null>(null);
   const [vidOpen, setVidOpen] = useState(false);
   const [dupOpen, setDupOpen] = useState(false);
@@ -341,8 +365,8 @@ function BriefWorkspace({ bid, onSwitch }: { bid: string; onSwitch: (id: string)
                   disabledReason={genBlock ?? undefined}
                   edit
                 >
-                  <Button size="sm" variant="brand" icon={<ImagePlus className="h-3.5 w-3.5" />} disabled={!!genBlock} onClick={() => setImgOpen({ presets: [preset], regen: false })}>
-                    Generate {flyer ? 'again' : preset}
+                  <Button id="generate-flyers" size="sm" variant="brand" icon={<ImagePlus className="h-3.5 w-3.5" />} disabled={!!genBlock} onClick={() => setImgOpen({ presets: [preset], regen: false })}>
+                    Generate flyers…
                   </Button>
                 </ActionPreview>
               </div>
@@ -363,7 +387,7 @@ function BriefWorkspace({ bid, onSwitch }: { bid: string; onSwitch: (id: string)
               { key: 'why', label: 'Why this message?', icon: <Route className="h-3.5 w-3.5" />, tip: 'why-message' },
               { key: 'copy', label: 'Copy', icon: <Palette className="h-3.5 w-3.5" /> },
               { key: 'storyboard', label: 'Storyboard', icon: <Layers className="h-3.5 w-3.5" />, count: b.storyboard?.scenes.length },
-              { key: 'video', label: 'Video', icon: <Film className="h-3.5 w-3.5" />, count: videos.length },
+              { key: 'video', label: 'Video', icon: <Film className="h-3.5 w-3.5" />, count: videos.length, id: 'video-tab' },
               { key: 'decisions', label: 'Decisions', icon: <ListChecks className="h-3.5 w-3.5" />, count: b.decisions.length },
               { key: 'jobs', label: 'Jobs', icon: <Clapperboard className="h-3.5 w-3.5" />, count: b.jobs.length },
             ]}
@@ -394,7 +418,7 @@ function BriefWorkspace({ bid, onSwitch }: { bid: string; onSwitch: (id: string)
                   disabledReason={genBlock ?? (!b.storyboard ? 'This brief has no storyboard yet.' : undefined)}
                   edit
                 >
-                  <Button variant="brand" icon={<Clapperboard className="h-4 w-4" />} disabled={!!genBlock || !b.storyboard} onClick={() => setVidOpen(true)}>
+                  <Button id="generate-video" variant="brand" icon={<Clapperboard className="h-4 w-4" />} disabled={!!genBlock || !b.storyboard} onClick={() => setVidOpen(true)}>
                     Generate video…
                   </Button>
                 </ActionPreview>
@@ -869,7 +893,7 @@ function ImagesDialog({ b, state, onClose, onQueued }: { b: BriefDetail; state: 
       size="lg"
       icon={<ImagePlus className="h-4 w-4" />}
       title={regen ? 'Regenerate background' : 'Generate flyers'}
-      description="Backgrounds come from Grok Imagine via NanoGPT; the real product photo, logo and exact copy are composited deterministically afterwards."
+      description="Backgrounds come from Grok Imagine (xAI, with automatic backups); the real product photo, logo and exact copy are composited deterministically afterwards."
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
@@ -1035,7 +1059,7 @@ function VideoDialog({ b, open, onClose, onQueued }: { b: BriefDetail; open: boo
             </Select>
           </Field>
           <Toggle checked={regen} onChange={setRegen} label="Force regeneration" description="Ignore cached clips for the chosen scope." />
-          <Toggle checked={narration} onChange={setNarration} label="Narration (TTS)" description="Hindi/Bengali via Sarvam first; labelled ‘needs review’. Off = silent with captions." />
+          <Toggle checked={narration} onChange={setNarration} label="Narration (TTS)" description="English voice-over in a natural American voice. Spanish, Hindi or Bengali briefs are narrated in their own language. Labelled ‘needs review’. Off = silent video with captions." />
         </div>
         <div className="space-y-4">
           <div className="rounded-2xl border border-line bg-surface2/60 p-4 text-sm" aria-live="polite" data-testid="video-estimate">
@@ -1088,7 +1112,7 @@ function DuplicateModal({ b, open, onClose }: { b: BriefDetail; open: boolean; o
   const strategies = useStrategies(pid).data?.items.filter((s) => !s.stale) ?? [];
   const toast = useToast();
   const [sid, setSid] = useState('');
-  const [lang, setLang] = useState<string>(b.language);
+  const [lang, setLang] = useState<string>('en'); // English by default; other languages are an option
   useEffect(() => {
     if (!open || sid) return;
     const pick =

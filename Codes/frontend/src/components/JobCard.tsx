@@ -135,7 +135,7 @@ export function JobCard({ job, pid }: { job: Job; pid: string }) {
           </>
         }
       >
-        <p className="mb-3 text-sm text-muted">Check the provider console (NanoGPT, or xAI if the fallback was used) for these request ids, then record what happened. Reservations are kept until each is resolved.</p>
+        <p className="mb-3 text-sm text-muted">Check the provider console (xAI, or NanoGPT / OpenRouter if a backup was used) for these request ids, then record what happened. Reservations are kept until each is resolved.</p>
         <ul className="space-y-2">
           {(reconcile ?? []).map((id) => {
             const a = attempts.find((x) => x.id === id);

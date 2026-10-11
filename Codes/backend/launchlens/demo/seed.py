@@ -193,7 +193,7 @@ SAMPLES = {
              "Bilingual parents looking for a durable, fun gift their teenager will actually use.",
              ["a gift that lasts", "a fair price"],
              [{"text": "Bad Bunny", "type": "urn:entity:artist"}, {"text": "Netflix", "type": "urn:entity:brand"}],
-             ["es", "en"]),
+             ["en", "es"]),
             ("retailers", "Independent electronics and record stores", "distribution_partner",
              "Store owners and buyers who choose which new audio brands to stock.",
              ["sell-through", "fair margins", "demo units"], [], ["en"])],

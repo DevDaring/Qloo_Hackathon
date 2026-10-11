@@ -53,7 +53,7 @@ export function RunConsole() {
     );
 
   return (
-    <section aria-label="Run console" data-run-console className="pointer-events-none sticky bottom-0 z-30 mt-auto">
+    <section id="run-console" aria-label="Run console" data-run-console className="pointer-events-none sticky bottom-0 z-30 mt-auto">
       <div className="pointer-events-auto mx-auto w-full">
         <div className={cn('border-t border-line bg-surface/90 shadow-[0_-12px_30px_-18px_rgb(14_19_32/0.35)] backdrop-blur-xl', open && 'bg-surface/95')}>
           {/* collapsed bar */}

@@ -25,7 +25,13 @@ export const ROLE_LABEL: Record<AudienceRole | string, string> = {
   distribution_partner: 'Distribution partner',
 };
 
-export const LANG_LABEL: Record<string, string> = { en: 'English', hi: 'हिन्दी Hindi', bn: 'বাংলা Bengali', es: 'Español Spanish' };
+/** English first (the default everywhere), then Spanish, Hindi and Bengali. Object key order is the display order. */
+export const LANG_LABEL: Record<string, string> = { en: 'English', es: 'Español Spanish', hi: 'हिन्दी Hindi', bn: 'বাংলা Bengali' };
+export const LANG_ORDER = ['en', 'es', 'hi', 'bn'];
+export const langRank = (l?: string | null) => {
+  const i = LANG_ORDER.indexOf(l ?? '');
+  return i < 0 ? LANG_ORDER.length : i;
+};
 
 export const PLACE_ROLE_LABEL: Record<string, string> = {
   competitor: 'Competitor',

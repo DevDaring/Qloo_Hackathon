@@ -270,15 +270,25 @@
   .shimmer-bar { animation: none; background-position: 50% 0; }
 }
 
-/* deep-link target (journey blockers): a brief, calm highlight */
+/* deep-link / "Show me" target: a strong pulsing ring, clearly visible in both themes */
 .hash-target {
-  outline: 3px solid rgb(var(--secondary) / 0.55);
+  position: relative;
+  z-index: 5;
+  outline: 3px solid #ff7a45;
   outline-offset: 4px;
   border-radius: 12px;
-  transition: outline-color 0.6s ease;
+  animation: ll-target-pulse 1s ease-in-out 3;
+}
+.dark .hash-target {
+  outline-color: #ffb088;
+}
+@keyframes ll-target-pulse {
+  0% { box-shadow: 0 0 0 0 rgb(255 122 69 / 0.7), 0 0 0 0 rgb(31 111 235 / 0.45); }
+  70% { box-shadow: 0 0 0 14px rgb(255 122 69 / 0), 0 0 0 26px rgb(31 111 235 / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(255 122 69 / 0), 0 0 0 0 rgb(31 111 235 / 0); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .hash-target { transition: none; }
+  .hash-target { animation: none; box-shadow: 0 0 0 6px rgb(255 122 69 / 0.35); }
 }
 
 /* ------------------------------------------------------------------ skeleton */

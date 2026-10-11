@@ -46,12 +46,12 @@ export function useDuplicateProject(pid?: string) {
 }
 
 /** Primary "Duplicate to edit" button. */
-export function DuplicateButton({ pid, className, size = 'sm', variant = 'brand', label = 'Duplicate to edit' }: { pid: string; className?: string; size?: 'sm' | 'md'; variant?: 'brand' | 'primary' | 'outline'; label?: string }) {
+export function DuplicateButton({ pid, className, size = 'sm', variant = 'brand', label = 'Duplicate to edit', id }: { pid: string; className?: string; size?: 'sm' | 'md'; variant?: 'brand' | 'primary' | 'outline'; label?: string; id?: string }) {
   const dup = useDuplicateProject(pid);
   const tooMany = dup.error instanceof ApiError && dup.error.code === 'too_many_projects';
   return (
     <span className="inline-flex flex-col items-start gap-1">
-      <Button size={size} variant={variant} className={className} icon={<CopyPlus className="h-4 w-4" />} loading={dup.isPending} onClick={() => dup.mutate()} data-testid="duplicate-project" data-tip="duplicate">
+      <Button id={id} size={size} variant={variant} className={className} icon={<CopyPlus className="h-4 w-4" />} loading={dup.isPending} onClick={() => dup.mutate()} data-testid="duplicate-project" data-tip="duplicate">
         {label}
       </Button>
       {tooMany && (
@@ -75,7 +75,7 @@ export function LockedBanner({ pid }: { pid: string }) {
           <span className="text-muted"> — everyone sees the same results. Duplicate to edit.</span>
           <span className="hidden text-subtle md:inline"> Exports and questions still work here.</span>
         </p>
-        <DuplicateButton pid={pid} />
+        <DuplicateButton pid={pid} id="duplicate" />
       </div>
     </div>
   );

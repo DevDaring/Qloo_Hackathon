@@ -321,6 +321,7 @@ function ExportsSection() {
             }
           >
             <Button
+              id="build-package"
               variant="brand"
               size="sm"
               icon={<PackagePlus className="h-3.5 w-3.5" />}

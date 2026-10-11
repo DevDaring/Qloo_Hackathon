@@ -247,10 +247,10 @@ export default function SettingsStatus() {
             <motion.div variants={fadeUp}>
               <ServiceCard
                 icon={<Sparkles className="h-5 w-5" />}
-                name="Image & video generation (NanoGPT)"
+                name="Image & video generation (xAI)"
                 plain={plain('media')}
                 purpose="Creates ad backgrounds and video clips — only after you approve a spending cap."
-                health={healthOf(s.media, 'NanoGPT', 'Flyers and videos cannot be generated; briefs, copy and layout previews still work.')}
+                health={healthOf(s.media, 'xAI', 'Flyers and videos cannot be generated; briefs, copy and layout previews still work.')}
                 checkedAt={q.dataUpdatedAt}
               >
                 <ProbeDetails p={s.media} legend={legend} />

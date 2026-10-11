@@ -242,3 +242,13 @@ def test_overlong_strings_are_trimmed_only_as_last_resort():
         M.model_validate({"cta": "x" * 30, "n": "not a number"})
     except ValidationError as e:
         assert _trim_overlong({"cta": "x" * 30, "n": "not a number"}, e) is None  # other errors still fail
+
+
+def test_howto_guides_are_complete_and_project_scoped():
+    from launchlens.services import assistant, howto
+    assert set(howto.GUIDES) == set(assistant.HOWTO_TOPICS)
+    g = howto.resolve("create_video", "P1")
+    assert g["title"] == "Make a video ad" and g["steps"][3]["to"] == "/projects/P1/studio?tab=video#generate-video"
+    assert all(s["image"] == f"/guide/create_video/{s['n']}.webp" for s in g["steps"])
+    assert howto.resolve("provider_status", None)["steps"][0]["to"] == "/settings"
+    assert howto.resolve("not_a_topic", "P1") is None

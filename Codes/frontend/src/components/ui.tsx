@@ -564,7 +564,7 @@ export function Tabs<K extends string>({
   className,
   size = 'md',
 }: {
-  tabs: { key: K; label: ReactNode; count?: number; icon?: ReactNode; tip?: string }[];
+  tabs: { key: K; label: ReactNode; count?: number; icon?: ReactNode; tip?: string; id?: string }[];
   value: K;
   onChange: (k: K) => void;
   className?: string;
@@ -590,6 +590,7 @@ export function Tabs<K extends string>({
             role="tab"
             type="button"
             aria-selected={active}
+            id={t.id}
             data-tip={t.tip}
             tabIndex={active ? 0 : -1}
             onKeyDown={(e) => onKey(e, i)}

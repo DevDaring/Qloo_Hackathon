@@ -9,7 +9,7 @@ import { ArrowDown, BadgeCheck, BarChart3, CalendarRange, CircleHelp, FileSearch
 import { useCreativeTrace } from '../api/hooks';
 import type { CreativeTrace, EvidenceBrief } from '../api/types';
 import { cn, humanize } from '../lib/format';
-import { LANG_LABEL } from '../lib/labels';
+import { LANG_LABEL, langRank } from '../lib/labels';
 import { EvidenceBadge, useEvidenceDrawer } from './Evidence';
 import { useProjectCtx } from './ProjectContext';
 import { GeneratedBadge } from './TasteStory';
@@ -164,7 +164,7 @@ export function WhyThisMessage({ bid, onSwitch }: { bid: string; onSwitch: (id: 
 }
 
 function VariantSwitcher({ t, onSwitch }: { t: CreativeTrace; onSwitch: (id: string) => void }) {
-  const variants = [{ brief_id: t.brief_id, audience: t.pilot_card.audience.name, language: t.language, headline: t.copy.headline, same_audience: true, current: true }, ...t.variants.map((v) => ({ ...v, current: false }))];
+  const variants = [{ brief_id: t.brief_id, audience: t.pilot_card.audience.name, language: t.language, headline: t.copy.headline, same_audience: true, current: true }, ...[...t.variants].sort((a, b) => langRank(a.language) - langRank(b.language)).map((v) => ({ ...v, current: false }))];
   if (variants.length < 2) return null;
   return (
     <nav aria-label="Other variants for this city" className="rounded-2xl border border-line bg-surface p-3">

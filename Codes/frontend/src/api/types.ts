@@ -1268,4 +1268,12 @@ export interface AssistantReply {
   suggestions: string[];
   model: string;
   qloo_calls?: Record<string, unknown>;
+  /** a verified step-by-step guide with annotated screenshots, when the question is "how do I …" */
+  howto?: HowTo | null;
+}
+export interface HowTo {
+  key: string;
+  title: string;
+  needs: string | null;
+  steps: { n: number; text: string; to: string | null; image: string }[];
 }

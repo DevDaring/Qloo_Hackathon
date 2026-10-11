@@ -305,7 +305,10 @@ async def creative_planner(state: LaunchState, config) -> dict:
             async with session_scope() as s:
                 sv = await s.get(StrategyVersion, uuid.UUID(sid))
             aud = next((a for a in ctx["audiences"] if a["id"] == str(sv.audience_version_id)), None)
-            langs = req.get("languages") or [(aud or {}).get("languages", ["en"])[0] if aud and aud.get("languages") else "en"]
+            # English first for every audience (the app is presented to US judges); the audience's own other
+            # language, e.g. Spanish, is added as an extra variant
+            own = [l for l in ((aud or {}).get("languages") or []) if l != "en"]
+            langs = req.get("languages") or (["en"] + own[:1])
             angles = [None]
             if aud and aud["role"] in ("product_user", "purchaser") and req.get("both_feature_hypotheses", True):
                 enabled = [f["key"] for f in ctx["product"]["features"] if f["enabled"]]

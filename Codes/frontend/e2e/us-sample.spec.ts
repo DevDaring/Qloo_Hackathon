@@ -46,7 +46,11 @@ test('US speaker sample: ranking, taste story and Spanish creative', async ({ pa
 
   // Ad studio: a Spanish variant exists alongside English
   await page.goto(`${projectUrl}/studio`);
-  await expect(page.getByText(/Español|Spanish/).first()).toBeVisible();
+  // English opens by default; Spanish variants are listed after the English ones
+  const variants = page.locator('#variants');
+  await expect(variants.getByText('EN', { exact: true }).first()).toBeVisible();
+  await expect(variants.getByText('ES', { exact: true }).first()).toBeAttached();
+  await expect(page.getByText('English', { exact: false }).first()).toBeVisible();
 
   // Qloo cultural fit drives the eligible cities' comparison
   await page.goto(`${projectUrl}/compare`);

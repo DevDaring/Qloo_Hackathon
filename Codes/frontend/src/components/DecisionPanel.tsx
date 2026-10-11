@@ -298,7 +298,7 @@ function CreativeScope({ pid, runId, onDone }: { pid: string; runId: string; onD
   return (
     <div className="space-y-5">
       <Callout tone="brand" icon={<CircleDollarSign className="h-4 w-4 text-brand-ink" />} title="This step can spend real money">
-        Images and video are generated with Grok Imagine through NanoGPT and billed to the configured account. Nothing is generated until you approve. The cap is enforced by the worker;
+        Images and video are generated with xAI Grok Imagine (NanoGPT and OpenRouter are automatic backups) and billed to the configured account. Nothing is generated until you approve. The cap is enforced by the worker;
         estimates come from the versioned pricing file ({pd?.estimates?.pricing_source || 'source unknown'}) and actual cost is recorded from the provider where it reports one.
       </Callout>
 
@@ -373,7 +373,7 @@ function CreativeScope({ pid, runId, onDone }: { pid: string; runId: string; onD
               </div>
             </Field>
           )}
-          <Toggle checked={narration} onChange={setNarration} label="Narration (TTS)" description="Optional; marked “needs review”. Without it videos are silent with captions." />
+          <Toggle checked={narration} onChange={setNarration} label="Narration (TTS)" description="English voice-over in a natural American voice; Spanish, Hindi or Bengali briefs are narrated in their own language. Marked “needs review”. Off = silent videos with captions." />
         </div>
         <div className="space-y-4">
           <div className="rounded-2xl border border-line bg-surface2/60 p-4">

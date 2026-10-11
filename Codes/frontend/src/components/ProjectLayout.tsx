@@ -9,7 +9,8 @@ import { EvidenceProvider } from './Evidence';
 import { ProjectContext, loadSelection, saveSelection, type ProjectCtx, type Selection } from './ProjectContext';
 import { JourneyHeader } from './JourneyBar';
 import { LockedBanner } from './Locked';
-import { useHashTarget } from '../hooks/useHashTarget';
+import { highlightTarget, useHashTarget } from '../hooks/useHashTarget';
+import { useToast } from './Toast';
 import { RunConsole } from './RunConsole';
 import { OPEN_CONSOLE_EVENT, ProjectNotifications, takeConsoleRequest } from './Activity';
 import { Button, ErrorState, Skeleton } from './ui';
@@ -41,10 +42,17 @@ export function ProjectLayout() {
   );
   const waitingRunId = pq.data?.runs.find((r) => r.status === 'waiting_for_user')?.id;
   // journey deep links: #decision opens the decision panel, other anchors scroll to and focus their target
+  const toast = useToast();
   useHashTarget((h) => {
-    if (h !== 'decision' || !waitingRunId) return false;
-    setDecisionRun(waitingRunId);
-    setDecisionOpen(true);
+    if (h !== 'decision') return false;
+    if (waitingRunId) {
+      setDecisionRun(waitingRunId);
+      setDecisionOpen(true);
+    } else {
+      // nothing to decide right now: say so and point at the run console instead of doing nothing
+      toast.info('Nothing is waiting for your choice', 'When research pauses for a decision, the Decide button appears in the top banner and in the run console.');
+      highlightTarget('run-console', { focus: false });
+    }
     return true;
   });
 

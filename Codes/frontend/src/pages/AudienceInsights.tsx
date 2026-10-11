@@ -17,7 +17,7 @@ import { AudienceCompare } from '../components/AudienceCompare';
 import { useToast } from '../components/Toast';
 import { Badge, Button, Callout, Card, CardHeader, Checkbox, EmptyState, ErrorState, Field, Input, PageHeader, Select, SkeletonCard, Tabs, Textarea, Tooltip, fadeUp, stagger, type Tone } from '../components/ui';
 import { cn, humanize } from '../lib/format';
-import { LANG_LABEL, ROLE_LABEL } from '../lib/labels';
+import { LANG_LABEL, ROLE_LABEL, langRank } from '../lib/labels';
 
 const ENTITY_TONE: Record<string, Tone> = { resolved: 'ok', proxy: 'violet', ambiguous: 'warn', pending: 'neutral', not_found: 'warn', unavailable: 'neutral' };
 const shortType = (t?: string | null) => (t ? t.replace(/^urn:(entity|tag):/, '').replace(/[:_]/g, ' ') : '');
@@ -134,7 +134,7 @@ function AudienceCard({ a, onEdit, qlooOff }: { a: AudienceWithEntities; onEdit:
             <Languages className="h-3.5 w-3.5" /> Languages
           </p>
           <div className="flex flex-wrap gap-1.5">
-            {a.languages.map((l) => (
+            {[...a.languages].sort((x, y) => langRank(x) - langRank(y)).map((l) => (
               <span key={l} lang={l} className="chip">
                 {LANG_LABEL[l] ?? l}
               </span>

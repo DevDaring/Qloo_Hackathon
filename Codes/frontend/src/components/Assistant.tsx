@@ -17,6 +17,7 @@ import { mutations, useProject } from '../api/hooks';
 import type { AssistantReply, QlooLookup } from '../api/types';
 import { cn } from '../lib/format';
 import { useGuide } from './Guide';
+import { Bold, HowToCard } from './HowToCard';
 import { loadSelection } from './ProjectContext';
 
 const PAGE_NAMES: Record<string, string> = {
@@ -105,6 +106,24 @@ export function Assistant() {
   const reduce = useReducedMotion();
   const bottom = useBottomOffset();
   const [open, setOpen] = useState(false);
+  // the panel moves to the left when a "Show me" target would be hidden under it
+  const [dock, setDock] = useState<'right' | 'left'>('right');
+  const dockAwayFrom = useCallback(() => {
+    let tries = 0;
+    const check = () => {
+      const t = document.querySelector('.hash-target');
+      const p = panel.current;
+      if (t && p) {
+        const a = t.getBoundingClientRect();
+        const b = p.getBoundingClientRect();
+        const overlap = a.right > b.left && a.left < b.right && a.bottom > b.top && a.top < b.bottom;
+        if (overlap) setDock((d) => (d === 'right' ? 'left' : 'right'));
+        return;
+      }
+      if (++tries < 30) window.setTimeout(check, 150);
+    };
+    window.setTimeout(check, 200);
+  }, []);
   const [turns, setTurns] = useState<Turn[]>(load);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -136,6 +155,7 @@ export function Assistant() {
 
   const close = useCallback(() => {
     setOpen(false);
+    setDock('right');
     window.setTimeout(() => launcher.current?.focus(), 30);
   }, []);
   useEffect(() => {
@@ -258,7 +278,7 @@ export function Assistant() {
             style={mobile ? undefined : { bottom, height: `min(600px, calc(100vh - ${bottom + 20}px))` }}
             className={cn(
               'fixed z-[60] flex flex-col overflow-hidden border border-line bg-surface shadow-[0_30px_80px_-20px_rgb(0_0_0/0.45)]',
-              mobile ? 'inset-0 rounded-none' : 'right-4 w-[400px] rounded-3xl sm:right-6',
+              mobile ? 'inset-0 rounded-none' : cn('w-[400px] rounded-3xl', dock === 'right' ? 'right-4 sm:right-6' : 'left-4 lg:left-[280px]'),
             )}
           >
             <Header
@@ -296,6 +316,12 @@ export function Assistant() {
                     onLink={(to) => {
                       nav(to);
                       if (mobile) setOpen(false);
+                    }}
+                    onShow={(to) => {
+                      // the page opens and the target pulses (useHashTarget); the chat stays open on desktop
+                      nav(to);
+                      if (mobile) setOpen(false);
+                      else dockAwayFrom();
                     }}
                   />
                 ),
@@ -405,12 +431,14 @@ function RichText({ text }: { text: string }) {
           b.kind === 'ul' ? (
             <ul key={i} className="list-disc space-y-1 pl-5">
               {b.lines.map((l, j) => (
-                <li key={j}>{l}</li>
+                <li key={j}>
+                  <Bold text={l} />
+                </li>
               ))}
             </ul>
           ) : (
             <p key={i} className="whitespace-pre-wrap">
-              {b.lines.join('\n')}
+              <Bold text={b.lines.join('\n')} />
             </p>
           ),
         )}
@@ -418,7 +446,7 @@ function RichText({ text }: { text: string }) {
   );
 }
 
-function AssistantBubble({ t, last, onAsk, onLink }: { t: Turn; last: boolean; onAsk: (q: string) => void; onLink: (to: string) => void }) {
+function AssistantBubble({ t, last, onAsk, onLink, onShow }: { t: Turn; last: boolean; onAsk: (q: string) => void; onLink: (to: string) => void; onShow: (to: string) => void }) {
   const r = t.reply;
   return (
     <div className="space-y-2.5" data-testid="assistant-answer">
@@ -428,6 +456,7 @@ function AssistantBubble({ t, last, onAsk, onLink }: { t: Turn; last: boolean; o
         </span>
         <RichText text={t.content} />
       </div>
+      {r?.howto && <HowToCard howto={r.howto} onShow={onShow} />}
       {r && r.qloo.length > 0 && (
         <div className="space-y-2" data-testid="assistant-qloo">
           {r.qloo.map((q, i) => (

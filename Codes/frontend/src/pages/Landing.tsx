@@ -37,14 +37,14 @@ const STEPS = [
   { icon: MapPinned, title: 'Discover places', body: 'Candidate cities, retrieved businesses, climate evidence and hard service constraints.' },
   { icon: Users, title: 'Understand audiences', body: 'Users, purchasers, institutions and partners — with Qloo taste signals where available.' },
   { icon: Store, title: 'Pick placements', body: 'Partners, venues and digital options, each with verification still to do.' },
-  { icon: Film, title: 'Generate flyers & video', body: 'Grok Imagine imagery via NanoGPT, deterministic typography, real MP4s with captions — within your cap.' },
+  { icon: Film, title: 'Generate flyers & video', body: 'Grok Imagine imagery from xAI (NanoGPT and OpenRouter as backups), deterministic typography, real MP4s with captions — within your cap.' },
   { icon: Download, title: 'Export with evidence', body: 'A campaign package with strategy, evidence summary, assets and a manifest.' },
 ];
 
 const POWERED = [
   { icon: Fingerprint, name: 'Qloo Taste AI' },
   { icon: Brain, name: 'OpenAI' },
-  { icon: Sparkles, name: 'Grok Imagine via NanoGPT' },
+  { icon: Sparkles, name: 'xAI Grok Imagine' },
   { icon: Globe2, name: 'OpenStreetMap' },
   { icon: CloudSun, name: 'Open-Meteo' },
   { icon: Workflow, name: 'LangGraph' },
