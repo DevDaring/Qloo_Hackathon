@@ -68,6 +68,31 @@ class StrategyDraft(BaseModel):
     feature_hypotheses: list[Ref] = Field(default_factory=list, description="Two competing feature-emphasis hypotheses")
 
 
+class _Positioning(BaseModel):
+    positioning: str = Field(max_length=300)
+
+
+async def _rewrite_positioning(text: str, issues: list[dict], product: dict, audience: dict, area: str,
+                               main_key: str, kw: dict, usage) -> str:
+    """One targeted rewrite when the claim check rejects the positioning; if that
+    also fails, a plain factual line built only from owner-stated product facts."""
+    feat = next((f for f in product["features"] if f["key"] == main_key), product["features"][0])
+    try:
+        r, _m = await llm.structured(
+            _Positioning, "Rewrite one marketing positioning statement so it makes no unsupported claim.",
+            f"<data>\nSTATEMENT: {text}\nPROBLEMS: {[(i['term'], i['reason']) for i in issues]}\n"
+            f"PRODUCT: {product['name']}. Main feature: {feat['name']} — {feat['proposed_benefit']}.\n"
+            f"AUDIENCE: {audience['name']}. LOCATION: {area}.\nAPPROVED CLAIMS: {kw.get('approved_claims')}\n</data>\n"
+            "Keep it one sentence, plain and specific. Avoid quality adjectives (durable, reliable, premium, best, "
+            "powerful), numbers, guarantees and any claim not in the approved claims.",
+            usage=usage, max_tokens=200, temperature=0.2)
+        if not claimcheck.check(r.positioning, **kw):
+            return r.positioning
+    except ProviderError:
+        pass
+    return f"{product['name']} for {audience['name'].split(' (')[0].lower()} in {area}: {feat['name'].lower()} — {feat['proposed_benefit'].rstrip('.').lower()}."
+
+
 async def gather(project_id: uuid.UUID, run_id: uuid.UUID, area_id: uuid.UUID, audience_version_id: uuid.UUID) -> dict:
     async with session_scope() as s:
         la = (await s.execute(select(LocationAssessment).where(LocationAssessment.run_id == run_id,
@@ -225,7 +250,8 @@ Return the strategy JSON. Provide exactly two feature_hypotheses (competing feat
     pos_issues = claimcheck.check(draft.positioning, **kw)
     if pos_issues:
         dropped["claims"].append({"text": draft.positioning, "issues": pos_issues})
-        draft.positioning = f"{product['name']} for {audience['name']} in {g['area'].name} (positioning removed by claim check; rewrite needed)."
+        draft.positioning = await _rewrite_positioning(draft.positioning, pos_issues, product, audience, g["area"].name,
+                                                       draft.main_feature_key, kw, usage)
 
     chosen = [p for p in g["placements"] if str(p.id) in {x.placement_id for x in draft.placement_options}]
     async with session_scope() as s:

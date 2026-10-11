@@ -1244,3 +1244,26 @@ export interface ExperimentAnalysis {
   blinded: { A: Record<string, string[]>; B: Record<string, string[]>; mapping: Record<string, string> | null; ratings?: Record<string, unknown> } | null;
   notes: string[];
 }
+
+/* ======================================================= floating assistant (POST /assistant/chat) */
+export interface AssistantMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+export interface QlooLookup {
+  interest: string;
+  target_type: string;
+  city: string | null;
+  signal: { name: string; type: string; id: string } | null;
+  results: { name: string; affinity: number | null; popularity: number | null; address: string | null }[];
+  note: string | null;
+}
+export interface AssistantReply {
+  answer: string;
+  used_qloo: boolean;
+  qloo: QlooLookup[];
+  links: { label: string; to: string }[];
+  suggestions: string[];
+  model: string;
+  qloo_calls?: Record<string, unknown>;
+}

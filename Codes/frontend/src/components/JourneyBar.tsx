@@ -22,7 +22,7 @@ export function JourneyHeader() {
     else if (next.to) nav(next.to);
   };
   return (
-    <div className="border-b border-line bg-surface/80 backdrop-blur-xl" data-testid="journey">
+    <div className="border-b border-line bg-surface/80 backdrop-blur-xl" data-testid="journey" data-tour="journey">
       <div className="mx-auto flex max-w-[1440px] flex-col gap-2 px-4 py-2.5 sm:px-6 lg:px-10 2xl:flex-row 2xl:items-center 2xl:gap-6">
         <nav aria-label="Project journey" className="min-w-0 2xl:flex-1">
           <ol className="scroll-thin flex items-center gap-0 overflow-x-auto pb-0.5 sm:gap-1" aria-busy={j.loading || undefined}>

@@ -13,10 +13,8 @@ import {
   LogOut,
   Map as MapIcon,
   Menu,
-  Moon,
   Package,
   Scale,
-  Sun,
   Target,
   Users,
   WandSparkles,
@@ -26,8 +24,11 @@ import {
 import { onUnauthorized } from '../api/client';
 import { mutations, useMe, useProjects } from '../api/hooks';
 import { cn } from '../lib/format';
-import { useOnline, useTheme } from '../hooks/useTheme';
+import { useOnline } from '../hooks/useTheme';
 import { Logo } from './Logo';
+import { GuideButton, GuideProvider } from './Guide';
+import { Assistant } from './Assistant';
+import { ThemeToggle } from './ThemeToggle';
 import { useDialog } from './Overlay';
 import { Badge, ErrorState, Skeleton } from './ui';
 
@@ -94,6 +95,7 @@ function AppShell() {
   const online = useOnline();
   useEffect(() => setMobileOpen(false), [loc.pathname]);
   return (
+    <GuideProvider>
     <div className="page-canvas flex min-h-screen">
       <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[200] focus:rounded-lg focus:bg-surface focus:px-3 focus:py-2 focus:shadow-lift">
         Skip to content
@@ -127,13 +129,24 @@ function AppShell() {
         )}
       </AnimatePresence>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-40 flex items-center gap-3 border-b border-line bg-surface/85 px-4 py-2.5 backdrop-blur-xl lg:hidden">
-          <button onClick={() => setMobileOpen(true)} className="rounded-lg p-1.5 text-muted hover:bg-surface2" aria-label="Open navigation">
+        <header className="sticky top-0 z-40 flex items-center gap-2 border-b border-line bg-surface/85 px-3 py-2 backdrop-blur-xl lg:hidden">
+          <button onClick={() => setMobileOpen(true)} className="flex h-11 w-11 items-center justify-center rounded-lg text-muted hover:bg-surface2" aria-label="Open navigation">
             <Menu className="h-5 w-5" />
           </button>
-          <Link to="/projects">
+          <Link to="/projects" className="min-w-0">
             <Logo />
           </Link>
+          <div className="ml-auto flex items-center gap-2">
+            <GuideButton compact />
+            <ThemeToggle />
+          </div>
+        </header>
+        <header className="sticky top-0 z-40 hidden h-14 items-center gap-3 border-b border-line bg-surface/80 px-6 backdrop-blur-xl lg:flex xl:px-10" data-testid="app-header">
+          <Crumbs />
+          <div className="ml-auto flex items-center gap-3">
+            <GuideButton />
+            <ThemeToggle />
+          </div>
         </header>
         {!online && (
           <div role="status" className="flex items-center justify-center gap-2 bg-warn-soft px-4 py-1.5 text-xs font-medium text-warn">
@@ -154,7 +167,48 @@ function AppShell() {
           </Suspense>
         </main>
       </div>
+      <Assistant />
     </div>
+    </GuideProvider>
+  );
+}
+
+/** Where you are: Projects › project › page. */
+function Crumbs() {
+  const projects = useProjects().data?.items ?? [];
+  const match = useMatch('/projects/:pid/*');
+  const pid = match?.params.pid;
+  const sub = match?.params['*']?.split('/')[0] ?? '';
+  const project = projects.find((p) => p.id === pid);
+  const page = PROJECT_NAV.find((n) => n.to === sub)?.label;
+  return (
+    <nav aria-label="Breadcrumb" className="min-w-0">
+      <ol className="flex min-w-0 items-center gap-1.5 text-[13px] text-muted">
+        <li>
+          <Link to="/projects" className="hover:text-fg">
+            Projects
+          </Link>
+        </li>
+        {pid && (
+          <>
+            <li aria-hidden className="text-subtle">/</li>
+            <li className="min-w-0 truncate">
+              <Link to={`/projects/${pid}`} className={cn('hover:text-fg', !page && 'font-semibold text-fg')}>
+                {project?.name ?? 'Project'}
+              </Link>
+            </li>
+            {page && sub && (
+              <>
+                <li aria-hidden className="text-subtle">/</li>
+                <li className="shrink-0 font-semibold text-fg" aria-current="page">
+                  {page}
+                </li>
+              </>
+            )}
+          </>
+        )}
+      </ol>
+    </nav>
   );
 }
 
@@ -164,7 +218,6 @@ function Sidebar() {
   const match = useMatch('/projects/:pid/*');
   const pid = match?.params.pid;
   const project = projects.find((p) => p.id === pid);
-  const { theme, toggle } = useTheme();
   const nav = useNavigate();
   const qc = useQueryClient();
   const [switcher, setSwitcher] = useState(false);
@@ -252,15 +305,6 @@ function Sidebar() {
               {me?.workspace.name} {me?.workspace.is_demo && <Badge tone="brand" className="ml-1 !py-0 !text-[9.5px]">demo</Badge>}
             </span>
           </span>
-          <button
-            onClick={toggle}
-            aria-pressed={theme === 'dark'}
-            className="rounded-lg p-1.5 text-muted hover:bg-surface2 hover:text-fg"
-            aria-label={theme === 'dark' ? 'Dark theme on — switch to light' : 'Light theme on — switch to dark'}
-            title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-          >
-            {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          </button>
           <button
             onClick={async () => {
               try {

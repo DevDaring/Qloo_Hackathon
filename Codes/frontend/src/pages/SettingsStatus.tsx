@@ -202,7 +202,7 @@ export default function SettingsStatus() {
       {q.error && <ErrorState error={q.error} onRetry={() => q.refetch()} />}
       {s && (
         <>
-          <motion.div variants={stagger(0.06)} initial="hidden" animate="show" className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+          <motion.div variants={stagger(0.06)} initial="hidden" animate="show" className="grid gap-5 md:grid-cols-2 xl:grid-cols-3" data-tour="providers">
             <motion.div variants={fadeUp}>
               <ServiceCard
                 testId="provider-qloo"

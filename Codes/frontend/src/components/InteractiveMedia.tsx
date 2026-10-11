@@ -66,6 +66,7 @@ export function InteractiveMedia({
       <button
         type="button"
         onClick={() => (onOpen ? onOpen() : setOpen(index))}
+        data-media
         className={cn(mediaFrame, aspect, 'w-full', frameClassName)}
         aria-label={`Open preview: ${it.alt}`}
       >

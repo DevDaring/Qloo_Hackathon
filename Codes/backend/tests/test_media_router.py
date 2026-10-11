@@ -89,3 +89,25 @@ def test_video_body_uses_nanogpt_fields():
     assert b["duration"] == "15" and b["imageDataUrl"].startswith("data:") and "image" not in b
     with pytest.raises(ProviderError):
         nanogpt.video_body("pan", 5, "9:16", image_ref="https://remote/img.jpg")
+
+
+async def test_openrouter_image_is_tried_after_both_nanogpt_keys(keys, monkeypatch):
+    from launchlens.providers import openrouter_image
+    monkeypatch.setattr(nanogpt, "request", fake_request(keys, rejected=("sk-nano-primary", "sk-nano-fallback")))
+    monkeypatch.setattr(openrouter_image, "configured", lambda: True)
+
+    async def or_gen(prompt, aspect_ratio="1:1", reference=None):
+        return {"bytes": b"x", "mime": "image/png", "cost_usd": None, "model": "google/gemini-2.5-flash-image",
+                "provider": "openrouter", "key_slot": "primary"}
+    monkeypatch.setattr(openrouter_image, "generate", or_gen)
+    res = await media.generate_image("a street")
+    assert res["provider"] == "openrouter" and len(keys) == 2  # both NanoGPT keys were tried first
+
+
+def test_reasoning_chain_order_and_dedup(monkeypatch):
+    from launchlens.providers import llm
+    for k, v in {"LLM_PRIMARY_PROVIDER": "nanogpt", "NANOGPT_API_KEY": "a", "NANOGPT_FALLBACK_API_KEY": "b",
+                 "OPENROUTER_API_KEY": "c", "OPENROUTER_FALLBACK_API_KEY": "c", "LLM_ALLOW_FALLBACK": True,
+                 "LLM_FALLBACK_PROVIDER": "xai", "XAI_API_KEY": "d"}.items():
+        monkeypatch.setattr(settings, k, v)
+    assert [p[0] for p in llm._providers()] == ["nanogpt", "nanogpt_backup", "openrouter", "xai"]  # duplicate key skipped

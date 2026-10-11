@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 
 from ..config import settings
-from . import nanogpt, xai
+from . import nanogpt, openrouter_image, xai
 from .base import ProviderError
 
 log = logging.getLogger("launchlens.media")
@@ -20,7 +20,7 @@ def primary() -> str:
 
 
 def configured() -> bool:
-    return nanogpt.configured() or xai.configured()
+    return nanogpt.configured() or openrouter_image.configured() or xai.configured()
 
 
 def image_model() -> str:
@@ -31,9 +31,30 @@ def video_model() -> str:
     return settings.NANOGPT_VIDEO_MODEL if primary() == "nanogpt" else settings.XAI_VIDEO_MODEL
 
 
+def _unavailable(e: ProviderError) -> bool:
+    """NanoGPT cannot serve at all (not a refusal or bad input): another provider may."""
+    return e.kind in ("not_configured", "auth", "transient") or nanogpt._key_problem(e)
+
+
 def _can_fall_back(e: ProviderError) -> bool:
-    return (settings.MEDIA_XAI_FALLBACK and xai.configured() and
-            (e.kind in ("not_configured", "auth", "transient") or nanogpt._key_problem(e)))
+    return settings.MEDIA_XAI_FALLBACK and xai.configured() and _unavailable(e)
+
+
+async def _image_fallbacks(prompt: str, aspect_ratio: str, reference: str | None, err: ProviderError) -> dict:
+    """After both NanoGPT keys: OpenRouter (two accounts), then direct xAI if enabled."""
+    if openrouter_image.configured():
+        try:
+            return await openrouter_image.generate(prompt, aspect_ratio=aspect_ratio, reference=reference)
+        except ProviderError as e2:
+            if not _unavailable(e2) and e2.kind != "failed":
+                raise
+            log.warning("OpenRouter image fallback unavailable (%s)", e2.kind)
+            err = e2
+    if not _can_fall_back(err):
+        raise err
+    res = await (xai.edit_image(prompt, reference, aspect_ratio=aspect_ratio) if reference
+                 else xai.generate_image(prompt, aspect_ratio=aspect_ratio))
+    return {**res, "provider": "xai"}
 
 
 async def generate_image(prompt: str, *, aspect_ratio: str = "1:1") -> dict:
@@ -41,9 +62,10 @@ async def generate_image(prompt: str, *, aspect_ratio: str = "1:1") -> dict:
         try:
             return await nanogpt.generate_image(prompt, aspect_ratio=aspect_ratio)
         except ProviderError as e:
-            if not _can_fall_back(e):
+            if not _unavailable(e):
                 raise
-            log.warning("NanoGPT image unavailable (%s); using direct xAI", e.kind)
+            log.warning("NanoGPT image unavailable (%s); trying fallbacks", e.kind)
+            return await _image_fallbacks(prompt, aspect_ratio, None, e)
     res = await xai.generate_image(prompt, aspect_ratio=aspect_ratio)
     return {**res, "provider": "xai"}
 
@@ -53,9 +75,10 @@ async def edit_image(prompt: str, reference: str, *, aspect_ratio: str = "1:1") 
         try:
             return await nanogpt.edit_image(prompt, reference, aspect_ratio=aspect_ratio)
         except ProviderError as e:
-            if not _can_fall_back(e):
+            if not _unavailable(e):
                 raise
-            log.warning("NanoGPT image edit unavailable (%s); using direct xAI", e.kind)
+            log.warning("NanoGPT image edit unavailable (%s); trying fallbacks", e.kind)
+            return await _image_fallbacks(prompt, aspect_ratio, reference, e)
     res = await xai.edit_image(prompt, reference, aspect_ratio=aspect_ratio)
     return {**res, "provider": "xai"}
 

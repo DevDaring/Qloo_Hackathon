@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Bot, Eye, Send, Sparkles, Wand } from 'lucide-react';
-import { mutations, useApiMutation, useConsultHistory, type RevisionBody } from '../api/hooks';
+import { mutations, pickDefaultRun, useApiMutation, useConsultHistory, useRun, useRuns, type RevisionBody } from '../api/hooks';
 import { RevisionPreviewSheet } from './RevisionPreview';
 import type { ConsultAnswer } from '../api/types';
 import { humanize } from '../lib/format';
@@ -10,10 +10,19 @@ import { useProjectCtx } from './ProjectContext';
 import { useToast } from './Toast';
 import { Badge, Button, Card, CardHeader, ErrorState, Textarea } from './ui';
 
-const SUGGESTIONS = ['Why is Chennai excluded?', 'What is still unknown about Kolkata?', 'Which feature should we lead with in New Delhi?'];
 
 export function ConsultPanel() {
   const { pid, project } = useProjectCtx();
+  // suggestions from this project's own cities (excluded, top-ranked, runner-up)
+  const runs = useRuns(pid);
+  const assess = useRun(pickDefaultRun(runs.data?.items)?.id).data?.assessments ?? [];
+  const excluded = assess.find((a) => !a.eligible)?.area_name;
+  const ranked = assess.filter((a) => a.eligible).sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99));
+  const SUGGESTIONS = [
+    excluded ? `Why is ${excluded} excluded?` : 'Which hard constraints matter most here?',
+    ranked[0] ? `What is still unknown about ${ranked[0].area_name}?` : 'What is still unknown?',
+    ranked[1] ? `Which feature should we lead with in ${ranked[1].area_name}?` : 'Which feature should we lead with?',
+  ];
   const hist = useConsultHistory(pid);
   const [msg, setMsg] = useState('');
   const [last, setLast] = useState<ConsultAnswer | null>(null);
@@ -46,7 +55,7 @@ export function ConsultPanel() {
 
   return (
     <Card>
-      <CardHeader icon={<Bot className="h-4 w-4" />} title="Ask LaunchLens" subtitle="Answers only from this project's evidence and assessments; unknowns are stated." />
+      <CardHeader icon={<Bot className="h-4 w-4" />} title="Ask about this project" subtitle="Answers only from this project's evidence and assessments; unknowns are stated. For general marketing questions, use the chat button." />
       <div className="space-y-3 p-5">
         {items.length > 0 && !last && (
           <ul className="max-h-56 space-y-2 overflow-y-auto pr-1 text-[13px]">
@@ -87,7 +96,7 @@ export function ConsultPanel() {
                     {last.proposed_revision.region_name ?? last.proposed_revision.feature_key ?? last.proposed_revision.ad_spend_budget ?? last.proposed_revision.role ?? ''}
                     <span className="block text-xs text-muted">{last.proposed_revision.rationale} — nothing changes until you preview and confirm.</span>
                   </span>
-<Button size="sm" icon={<Eye className="h-3.5 w-3.5" />} onClick={() => setPreview(toBody(last.proposed_revision!))}>
+<Button size="sm" icon={<Eye className="h-3.5 w-3.5" />} onClick={() => setPreview(toBody(last.proposed_revision!))} data-tip="revision-preview">
                     Preview the change
                   </Button>
                 </div>

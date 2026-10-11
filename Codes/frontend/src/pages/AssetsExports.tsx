@@ -135,7 +135,7 @@ function AssetTile({ a, gallery, onDetails }: { a: Asset; gallery: Gallery; onDe
   }
   return (
     <div className="card overflow-hidden">
-      <button type="button" onClick={onDetails} className={cn(mediaFrame, 'aspect-[4/5] w-full rounded-none border-0 border-b')} aria-label={`Open ${humanize(a.kind)} details`}>
+      <button type="button" data-media onClick={onDetails} className={cn(mediaFrame, 'aspect-[4/5] w-full rounded-none border-0 border-b')} aria-label={`Open ${humanize(a.kind)} details`}>
         {isVid ? (
           <>
             <video src={`${a.url}#t=1`} muted preload="metadata" className={cn(mediaImg, 'object-cover')} aria-hidden />
@@ -304,14 +304,14 @@ function ExportsSection() {
   const [manifest, setManifest] = useState<string | null>(null);
   const create = useApiMutation(() => mutations.createExport(pid), [['exports', pid], ['jobs', pid]]);
   return (
-    <Card>
+    <Card data-tour="packages">
       <CardHeader
         icon={<Archive className="h-4 w-4" />}
         title="Campaign packages"
         subtitle="Strategy, evidence summary, placement brief and outreach draft (not sent), flyers, videos, copy, storyboard and a manifest with hashes."
         action={
           <ActionPreview
-            tip="Download strategy, permitted evidence summaries and selected creative."
+            tipKey="build-package"
             title="Build package"
             details={
               <>

@@ -77,7 +77,7 @@ export function QlooImpact({ runId, qlooRun }: { runId?: string; qlooRun?: boole
   const canCreate = !locked && !!runId && qlooRun !== false;
 
   return (
-    <section id="qloo-impact" className="scroll-mt-24 space-y-5" aria-labelledby="qloo-impact-title" data-testid="qloo-impact">
+    <section id="qloo-impact" className="scroll-mt-24 space-y-5" aria-labelledby="qloo-impact-title" data-testid="qloo-impact" data-tour="impact">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
           <p className="eyebrow flex items-center gap-1.5">
@@ -207,7 +207,7 @@ function Verdict({ d }: { d: Ex }) {
   return (
     <div className="space-y-3">
       {!d.validity.valid && (
-        <Callout tone="bad" icon={<AlertTriangle className="h-4 w-4 text-bad" />} title="Read with care: this is not a clean comparison" className="border-2" >
+        <Callout tone="bad" icon={<AlertTriangle className="h-4 w-4 text-bad" />} title={<span data-tip="validity-invalid" tabIndex={0} data-testid="validity-chip">Read with care: this is not a clean comparison</span>} className="border-2">
           <ul className="list-disc space-y-0.5 pl-4" data-testid="validity-problems">
             {problems.map((p) => (
               <li key={p}>{p}</li>
@@ -225,9 +225,11 @@ function Verdict({ d }: { d: Ex }) {
           {!s.material && <p className="mt-1 text-[12.5px] text-muted">That is a valid result: here, taste signals did not move the recommendation.</p>}
         </div>
         {d.validity.valid && (
-          <Badge tone="ok" icon={<ShieldCheck className="h-3 w-3" />}>
-            Valid: practical evidence identical
-          </Badge>
+          <span data-tip="validity-valid" tabIndex={0} data-testid="validity-chip">
+            <Badge tone="ok" icon={<ShieldCheck className="h-3 w-3" />}>
+              Valid: practical evidence identical
+            </Badge>
+          </span>
         )}
       </div>
     </div>
@@ -244,7 +246,11 @@ function CityOrder({ d }: { d: Ex }) {
         icon={<ListOrdered className="h-4 w-4" />}
         title="City order"
         subtitle="Hard constraints first; then the practical index alone vs the full planning index."
-        action={d.location_order.changed ? <Badge tone="accent">Order changed</Badge> : <Badge tone="neutral" icon={<Equal className="h-3 w-3" />}>Order unchanged</Badge>}
+        action={
+          <span data-tip="order-unchanged" tabIndex={0}>
+            {d.location_order.changed ? <Badge tone="accent">Order changed</Badge> : <Badge tone="neutral" icon={<Equal className="h-3 w-3" />}>Order unchanged</Badge>}
+          </span>
+        }
       />
       <LayoutGroup>
         <div className="grid gap-4 p-5 sm:grid-cols-2">
@@ -322,8 +328,8 @@ function HeldConstant({ d, onDetails }: { d: Ex; onDetails: () => void }) {
       <div className="flex flex-1 flex-col gap-3 p-5">
         <ul className="flex flex-wrap gap-1.5">
           {d.conditions.held_constant.map((h) => (
-            <li key={h}>
-              <Badge tone="neutral" icon={<CheckCircle2 className="h-3 w-3 text-ok" />}>
+            <li key={h} className="max-w-full">
+              <Badge tone="neutral" className="max-w-full" icon={<CheckCircle2 className="h-3 w-3 text-ok" />}>
                 {h}
               </Badge>
             </li>

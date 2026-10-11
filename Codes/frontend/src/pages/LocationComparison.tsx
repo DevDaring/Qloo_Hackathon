@@ -107,7 +107,7 @@ export default function LocationComparison() {
         }}
         tabs={[
           { key: 'locations', label: 'Compare locations', icon: <Scale className="h-3.5 w-3.5" /> },
-          { key: 'impact', label: 'See what Qloo changed', icon: <Sparkles className="h-3.5 w-3.5" /> },
+          { key: 'impact', label: 'See what Qloo changed', icon: <Sparkles className="h-3.5 w-3.5" />, tip: 'qloo-changed' },
         ]}
       />
       </div>
@@ -152,7 +152,7 @@ export default function LocationComparison() {
             </Callout>
           )}
           <ComponentLegend />
-          <div className={cn('grid gap-5', items.length >= 3 ? 'lg:grid-cols-3' : items.length === 2 ? 'lg:grid-cols-2' : '')}>
+          <div className={cn('grid gap-5', items.length >= 3 ? 'lg:grid-cols-3' : items.length === 2 ? 'lg:grid-cols-2' : '')} data-tour="locations">
             {items.map((a, i) => (
               <motion.div key={a.id} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }}>
                 <LocationCard a={a} />
@@ -569,7 +569,7 @@ function RevisionPanel({ candidates }: { candidates: string[] }) {
               </Field>
             </div>
           )}
-          <Button variant="brand" icon={<Eye className="h-4 w-4" />} disabled={!valid} onClick={() => setConfirm(true)}>
+          <Button variant="brand" icon={<Eye className="h-4 w-4" />} disabled={!valid} onClick={() => setConfirm(true)} data-tip="revision-preview">
             Preview the change
           </Button>
           <p className="text-xs text-muted">You see what would change and what stays before anything is applied.</p>

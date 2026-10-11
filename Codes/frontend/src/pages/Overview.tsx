@@ -86,13 +86,13 @@ export default function Overview() {
         description={project.goal}
         actions={
           <>
-            <ActionPreview tip="Compare this research snapshot with a practical baseline (the same run without Qloo taste signals).">
+            <ActionPreview tipKey="qloo-changed">
               <Link to={`/projects/${pid}/compare?view=impact`} className="inline-flex h-10 items-center gap-2 rounded-xl border border-line bg-surface px-4 text-sm font-medium transition hover:border-fg/30 hover:bg-surface2 [@media(pointer:coarse)]:min-h-[44px]">
                 <Sparkles className="h-4 w-4 text-violet-600" /> See what Qloo changed
               </Link>
             </ActionPreview>
             <ActionPreview
-              tip="Find places and audience matches for your selected cities."
+              tipKey="start-research"
               title="Start research"
               details={
                 <>

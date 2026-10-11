@@ -1,5 +1,16 @@
 import { expect, test, type Page } from '@playwright/test';
 
+// the project guide opens automatically after sign-in; these flows test pages, not the guide
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('ll-guide-done', '1');
+    } catch {
+      /* ignore */
+    }
+  });
+});
+
 /**
  * The demo journey on the seeded, read-only sample: locked banner → taste story
  * (provider evidence, generated hypotheses) → "See what Qloo changed" → "Why this

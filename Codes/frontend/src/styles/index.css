@@ -206,6 +206,7 @@
     font-variant-numeric: tabular-nums;
   }
   .scroll-thin {
+    position: relative; /* contain absolutely positioned (e.g. screen-reader-only) children so they never widen the page */
     scrollbar-width: thin;
     scrollbar-color: rgb(var(--border)) transparent;
   }
@@ -216,6 +217,41 @@
     background-image: linear-gradient(rgb(var(--border) / 0.55) 1px, transparent 1px),
       linear-gradient(90deg, rgb(var(--border) / 0.55) 1px, transparent 1px);
     background-size: 44px 44px;
+  }
+}
+
+/* content images glow and grow on hover / keyboard focus (product photos, flyers, thumbnails,
+   portraits, generated backgrounds). Chrome icons, logos and avatars are SVG or text and are not
+   affected; maps and anything marked .no-zoom are excluded. Transform only: no layout shift. */
+#main img:not(.no-zoom) {
+  transition: transform 0.2s ease-out, box-shadow 0.2s ease-out, filter 0.2s ease-out;
+}
+#main img:not(.no-zoom):hover,
+#main :is(a, button, [tabindex]):focus-visible img:not(.no-zoom) {
+  transform: scale(1.05);
+  filter: saturate(1.06) brightness(1.03);
+  box-shadow: 0 0 0 2px rgb(var(--primary) / 0.55), 0 14px 34px -10px rgb(var(--primary) / 0.6);
+  position: relative;
+  z-index: 1;
+}
+/* InteractiveMedia frames draw their own ring; the image only scales inside the frame */
+#main [data-media] img:hover,
+#main [data-media]:focus-visible img {
+  box-shadow: none;
+}
+#main .maplibregl-map img,
+#main .maplibregl-map img:hover {
+  transform: none;
+  box-shadow: none;
+  filter: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  #main img:not(.no-zoom) {
+    transition: none;
+  }
+  #main img:not(.no-zoom):hover,
+  #main :is(a, button, [tabindex]):focus-visible img:not(.no-zoom) {
+    transform: none;
   }
 }
 

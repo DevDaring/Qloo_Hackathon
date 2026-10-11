@@ -731,7 +731,18 @@ async def placement_research(run_id: uuid.UUID, project_id: uuid.UUID, area: dic
                 x[2]["affinity_rank"] = ar
                 x[0] = 0.45 * x[2]["category_fit"] + 0.25 * x[2]["proximity"] + (0.30 * ar if ar is not None else 0.0)
             scored.sort(key=lambda x: -x[0])
-            for score_val, p, parts, q in scored[:8]:
+            shortlist = scored[:8]
+            # Taste discovery must stay visible: keep the two strongest Qloo-recommended places that fit this
+            # role among the candidates, replacing the weakest practical-only entries (still scored and labelled).
+            by_aff = sorted([x for x in scored if x[3] and x[3].get("affinity") is not None],
+                            key=lambda x: -x[3]["affinity"])[:2]
+            for x in by_aff:
+                if x not in shortlist:
+                    weakest = next((y for y in reversed(shortlist) if not (y[3] and y[3].get("affinity") is not None)), None)
+                    if weakest is not None:
+                        shortlist[shortlist.index(weakest)] = x
+            shortlist.sort(key=lambda x: -x[0])
+            for score_val, p, parts, q in shortlist:
                 channel, activation = prof.activation.get(p.category, ("partner_business", "partnership_flyer"))
                 pt = to_shape(p.geom)
                 s.add(PlacementCandidate(

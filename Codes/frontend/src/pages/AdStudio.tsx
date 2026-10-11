@@ -251,7 +251,7 @@ function BriefWorkspace({ bid, onSwitch }: { bid: string; onSwitch: (id: string)
         {b.strategy.stale && <p className="mt-2 text-xs text-warn">The strategy behind this brief is stale.</p>}
       </Card>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]" data-tour="studio">
         {/* canvas */}
         <div className="space-y-4">
           <Card className="overflow-hidden">
@@ -312,7 +312,7 @@ function BriefWorkspace({ bid, onSwitch }: { bid: string; onSwitch: (id: string)
               )}
               <div className="ml-auto flex flex-wrap gap-2">
                 <ActionPreview
-                  tip="Regenerate only the background; copy, product photo and layout are kept. Opens the cost review first."
+                  tipKey="regenerate-background"
                   disabledReason={genBlock ?? (!flyer ? 'Generate this format once before regenerating its background.' : undefined)}
                   inlineReason={false}
                   edit
@@ -322,7 +322,8 @@ function BriefWorkspace({ bid, onSwitch }: { bid: string; onSwitch: (id: string)
                   </Button>
                 </ActionPreview>
                 <ActionPreview
-                  tip={`Create the selected format (${preset}). ${imgEst.data ? `Current estimate ≤ ${imgEst.data.images.usd === 'unknown' ? 'unknown' : `$${Number(imgEst.data.images.usd).toFixed(3)}`}.` : ''} Opens the cost review — nothing is spent until you confirm.`}
+                  tipKey="generate-flyers"
+                  extra={`Format: ${preset}.${imgEst.data ? ` Current estimate ≤ ${imgEst.data.images.usd === 'unknown' ? 'unknown' : `$${Number(imgEst.data.images.usd).toFixed(3)}`}.` : ''}`}
                   title="Generate flyers"
                   details={
                     <>
@@ -356,7 +357,7 @@ function BriefWorkspace({ bid, onSwitch }: { bid: string; onSwitch: (id: string)
             value={tab}
             onChange={setTab}
             tabs={[
-              { key: 'why', label: 'Why this message?', icon: <Route className="h-3.5 w-3.5" /> },
+              { key: 'why', label: 'Why this message?', icon: <Route className="h-3.5 w-3.5" />, tip: 'why-message' },
               { key: 'copy', label: 'Copy', icon: <Palette className="h-3.5 w-3.5" /> },
               { key: 'storyboard', label: 'Storyboard', icon: <Layers className="h-3.5 w-3.5" />, count: b.storyboard?.scenes.length },
               { key: 'video', label: 'Video', icon: <Film className="h-3.5 w-3.5" />, count: videos.length },
@@ -371,7 +372,8 @@ function BriefWorkspace({ bid, onSwitch }: { bid: string; onSwitch: (id: string)
             <div className="space-y-4">
               <div className="flex flex-wrap items-center gap-2">
                 <ActionPreview
-                  tip={`Create the selected formats (vertical and landscape video). ${vidEst.data ? `Current estimate ≈ ${vidEst.data.video.clips_list_usd === 'unknown' ? 'unknown' : `$${(Number(vidEst.data.video.frames_usd) + Number(vidEst.data.video.clips_list_usd)).toFixed(2)}`}.` : ''} Opens the cost review — nothing is spent until you confirm.`}
+                  tipKey="generate-video"
+                  extra={vidEst.data ? `Current estimate ≈ ${vidEst.data.video.clips_list_usd === 'unknown' ? 'unknown' : `$${(Number(vidEst.data.video.frames_usd) + Number(vidEst.data.video.clips_list_usd)).toFixed(2)}`}.` : undefined}
                   title="Generate video"
                   details={
                     <>

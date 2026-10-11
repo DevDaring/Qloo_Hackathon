@@ -303,6 +303,18 @@ async def insights_in_location(entity_type: str, location_query: str, *, entity_
     return [_entity(e) for e in ents], meta
 
 
+async def related(entity_type: str, *, entity_ids: list[str], tag_ids: list[str], take: int = 8,
+                  budget: CallBudget | None = None) -> tuple[list[dict], dict]:
+    """Entities of one type ranked by affinity to the signals, with no location
+    filter (e.g. brands or TV shows that fans of an artist also like)."""
+    _check_type(entity_type, with_location=False)
+    params = {"filter.type": entity_type, "take": take, **_signals(entity_ids, tag_ids)}
+    data, meta = await _get("/v2/insights", params, budget=budget)
+    ents = ((data.get("results") or {}).get("entities")) or []
+    _empty_note(meta, ents)
+    return [_entity(e) for e in ents], meta
+
+
 async def heatmap(*, location_query: str | None = None, wkt: str | None = None, entity_ids: list[str],
                   tag_ids: list[str], budget: CallBudget | None = None) -> tuple[list[dict], dict]:
     """Locality heatmap: grid points with affinity, affinity_rank (rank-normalized

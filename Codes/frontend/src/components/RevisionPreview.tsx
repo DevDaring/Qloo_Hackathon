@@ -55,6 +55,7 @@ export function RevisionPreviewSheet({
             <Button
               variant="brand"
               icon={<RotateCcw className="h-4 w-4" />}
+              data-tip="revision-apply"
               disabled={!p}
               loading={apply.isPending}
               onClick={() =>

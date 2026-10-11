@@ -5,9 +5,10 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { AlertTriangle, ArrowLeft, ArrowRight, Eye, EyeOff, KeyRound, Lock, Sparkles, User } from 'lucide-react';
 import { ApiError } from '../api/client';
 import { mutations } from '../api/hooks';
-import { IndiaMap } from '../components/IndiaMap';
+import { SpinningGlobe } from '../components/intro/SpinningGlobe';
 import { Logo } from '../components/Logo';
 import { ThemeToggle } from '../components/ThemeToggle';
+import { requestGuideAfterLogin } from '../components/Guide';
 import { Button, CopyButton, Field, Input } from '../components/ui';
 
 const JURY = { username: 'TestUser', password: 'TestUser11' };
@@ -27,6 +28,7 @@ export default function Login() {
     setError(null);
     try {
       await mutations.login({ username: u, password: p });
+      requestGuideAfterLogin();
       await qc.invalidateQueries({ queryKey: ['me'] });
       const next = params.get('next');
       nav(next && next.startsWith('/') && !next.startsWith('//') ? next : '/projects', { replace: true });
@@ -69,15 +71,16 @@ export default function Login() {
           <Link to="/" className="inline-flex w-fit items-center gap-2 text-sm text-white/70 hover:text-white">
             <ArrowLeft className="h-4 w-4" /> Back to home
           </Link>
-          <div className="mx-auto w-full max-w-[460px]">
-            <IndiaMap dark className="h-auto w-full" />
+          <div className="relative mx-auto aspect-square w-full max-w-[min(460px,52vh)]" data-testid="login-globe">
+            <div aria-hidden className="absolute inset-[6%] rounded-full bg-[#1F6FEB]/25 blur-[60px]" />
+            <SpinningGlobe fill centerLon={-98} centerLat={30} sizeRatio={0.92} />
           </div>
           <div>
             <Logo inverted />
-            <p className="mt-4 max-w-md font-display text-2xl font-bold leading-snug tracking-tight">
-              Where should a fan-and-speech power wheelchair launch first — and what should each audience see?
+            <p className="mt-4 max-w-md font-display text-2xl font-bold leading-snug tracking-tight">Where should your product launch first — and what should each audience see?</p>
+            <p className="mt-3 max-w-md text-sm text-white/60">
+              Two worked samples: a portable speaker launching in New York, Phoenix and Houston, and a power wheelchair launching in Indian cities — each with evidence, honest unknowns and ads you review before anything is spent.
             </p>
-            <p className="mt-3 max-w-md text-sm text-white/60">The sample project answers with evidence, honest unknowns and ads you can review before anything is spent.</p>
           </div>
         </div>
       </div>

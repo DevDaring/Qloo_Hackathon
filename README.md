@@ -75,6 +75,9 @@ footfall, purchase probability or a disability signal. Raw Qloo responses stay s
 - **Explanations:** "Why this place?" taste story, two-audience comparison on the same city and inputs, "Why this
   message?" creative trace back to product facts, strategy and evidence, a *Pilot hypothesis* card (planned, never
   shown as a result), and up to three underexplored opportunities (affinity and popularity shown separately).
+- **Ask LaunchLens assistant:** a floating chat on every signed-in page answers app and marketing questions. Taste
+  questions ("which brands do Bad Bunny fans like?", "where in New York would Taylor Swift fans go?") are grounded in
+  live Qloo Insights, shown as separate "Qloo data" cards next to the AI-written answer.
 - **Guided journey:** Brief → Audience → Explore → Strategy → Create → Export on every page, with blockers that link
   to the exact field or decision and one next action.
 - **Read-only jury sample:** the sample project is locked so every visitor sees the same results. **Duplicate to
@@ -106,8 +109,8 @@ FastAPI (Python 3.12, Pydantic) ──── PostgreSQL 16 + PostGIS ───�
 | Backend | FastAPI, SQLAlchemy 2 (asyncpg), Alembic, GeoAlchemy2/PostGIS |
 | Agent workflow | LangGraph with the PostgreSQL checkpointer (schema `langgraph`), interrupts for human decisions |
 | Taste intelligence | Qloo Insights API (hackathon environment) |
-| Reasoning | `openai/gpt-4.1-mini` through **NanoGPT** (primary key, then fallback key); OpenAI direct and xAI Grok remain configurable |
-| Images and video | Grok Imagine (`grok-imagine-image`, `grok-imagine-video`) through **NanoGPT**, with a primary and a fallback key; direct xAI only as a last resort |
+| Reasoning | `openai/gpt-4.1-mini` through **NanoGPT** (two keys) → **OpenRouter** (two accounts) → xAI Grok |
+| Images and video | Grok Imagine (`grok-imagine-image`, `grok-imagine-video`) through **NanoGPT** (two keys); image fallback via **OpenRouter** (two accounts, `google/gemini-2.5-flash-image`); direct xAI last |
 | Indian languages | Sarvam AI (Mayura translation, Bulbul v3 narration); Fish Audio and fal as narration fallbacks |
 | Practical data | OpenStreetMap via Overpass (places), Nominatim (geocoding), Open-Meteo ERA5 archive (climate), OpenFreeMap tiles, NASA Blue/Black Marble imagery (landing globe) |
 | Jobs | PostgreSQL jobs with atomic `SKIP LOCKED` claims, leases, heartbeats, idempotency keys and deadlines |

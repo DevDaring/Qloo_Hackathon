@@ -2,7 +2,6 @@ import {
   forwardRef,
   useEffect,
   useId,
-  useLayoutEffect,
   useRef,
   useState,
   type ButtonHTMLAttributes,
@@ -11,11 +10,11 @@ import {
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from 'react';
-import { createPortal } from 'react-dom';
 import { animate, motion, useInView, useReducedMotion } from 'framer-motion';
 import { AlertTriangle, Check, Copy, Inbox, Loader2, RefreshCw, WifiOff } from 'lucide-react';
 import { ApiError } from '../api/client';
 import { cn } from '../lib/format';
+import { setTipContent, useDescribedBy } from './Tips';
 
 /* ------------------------------------------------------------------ Button */
 type Variant = 'primary' | 'brand' | 'secondary' | 'ghost' | 'danger' | 'outline';
@@ -397,73 +396,27 @@ export function Stat({
   );
 }
 
-/* ------------------------------------------------------------------ Tooltip (portal, hover + focus) */
-const FOCUSABLE_SEL = 'a[href],button,input,select,textarea,[tabindex]:not([tabindex="-1"])';
-
+/* ------------------------------------------------------------------ Tooltip (global tip layer, hover + focus) */
 /**
- * Brief tip shown ~300 ms after hover or keyboard focus. `aria-describedby`
- * is attached to the actual interactive control inside (not the wrapper);
- * Escape dismisses. Never use it for information that is essential — show
- * that inline as well.
+ * Brief explanation shown 250 ms after hover or keyboard focus, rendered by the
+ * single global <TipLayer> (see Tips.tsx) so every tip in the app looks and
+ * behaves the same. `aria-describedby` is attached to the real control inside.
+ * Never use it for information that is essential — show that inline as well.
  */
-export function Tooltip({ content, children, className, delay = 300 }: { content: ReactNode; children: ReactNode; className?: string; delay?: number }) {
+export function Tooltip({ content, children, className }: { content: ReactNode; children: ReactNode; className?: string; delay?: number }) {
   const id = useId();
   const ref = useRef<HTMLSpanElement>(null);
-  const timer = useRef<number | null>(null);
-  const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState<{ x: number; y: number; below: boolean }>({ x: 0, y: 0, below: false });
-  const show = () => {
-    if (timer.current) window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => setOpen(true), delay);
-  };
-  const hide = () => {
-    if (timer.current) window.clearTimeout(timer.current);
-    setOpen(false);
-  };
-  useEffect(() => () => void (timer.current && window.clearTimeout(timer.current)), []);
-  // describe the real control, not the wrapper
   useEffect(() => {
-    const host = ref.current;
-    if (!host) return;
-    const target = (host.matches(FOCUSABLE_SEL) ? host : host.querySelector<HTMLElement>(FOCUSABLE_SEL)) ?? host;
-    const prev = target.getAttribute('aria-describedby');
-    target.setAttribute('aria-describedby', [prev, id].filter(Boolean).join(' '));
-    return () => {
-      const cur = (target.getAttribute('aria-describedby') ?? '').split(' ').filter((x) => x && x !== id);
-      if (cur.length) target.setAttribute('aria-describedby', cur.join(' '));
-      else target.removeAttribute('aria-describedby');
-    };
-  }, [id]);
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open]);
-  useLayoutEffect(() => {
-    if (!open || !ref.current) return;
-    const r = ref.current.getBoundingClientRect();
-    const below = r.top < 90;
-    setPos({ x: Math.min(Math.max(r.left + r.width / 2, 150), window.innerWidth - 150), y: below ? r.bottom + 8 : r.top - 8, below });
-  }, [open]);
+    setTipContent(id, { node: content });
+  });
+  useEffect(() => () => setTipContent(id, null), [id]);
+  useDescribedBy(ref, `desc${id}`);
   return (
-    <span ref={ref} className={cn('inline-flex', className)} onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide}>
+    <span ref={ref} className={cn('relative inline-flex', className)} data-tip-ref={id}>
       {children}
-      {/* always in the DOM (visually hidden when closed) so aria-describedby resolves for screen readers */}
-      {createPortal(
-        <span
-          id={id}
-          role="tooltip"
-          style={{ left: pos.x, top: pos.y, transform: `translate(-50%, ${pos.below ? '0' : '-100%'})` }}
-          className={cn(
-            'pointer-events-none fixed z-[100] max-w-[280px] rounded-lg bg-[#0E1320] px-3 py-2 text-xs leading-relaxed text-white shadow-lift dark:bg-white dark:text-[#0E1320]',
-            open ? 'opacity-100' : 'sr-only opacity-0',
-          )}
-        >
-          {content}
-        </span>,
-        document.body,
-      )}
+      <span id={`desc${id}`} className="sr-only">
+        {content}
+      </span>
     </span>
   );
 }
@@ -606,7 +559,7 @@ export function Tabs<K extends string>({
   className,
   size = 'md',
 }: {
-  tabs: { key: K; label: ReactNode; count?: number; icon?: ReactNode }[];
+  tabs: { key: K; label: ReactNode; count?: number; icon?: ReactNode; tip?: string }[];
   value: K;
   onChange: (k: K) => void;
   className?: string;
@@ -632,6 +585,7 @@ export function Tabs<K extends string>({
             role="tab"
             type="button"
             aria-selected={active}
+            data-tip={t.tip}
             tabIndex={active ? 0 : -1}
             onKeyDown={(e) => onKey(e, i)}
             onClick={() => onChange(t.key)}

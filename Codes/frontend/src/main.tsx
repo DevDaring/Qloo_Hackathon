@@ -7,6 +7,7 @@ import { ApiError } from './api/client';
 import { App } from './App';
 import { WaveBackground } from './components/WaveBackground';
 import { ToastProvider } from './components/Toast';
+import { TipLayer } from './components/Tips';
 import './styles/index.css';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
@@ -31,6 +32,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           <BrowserRouter>
             <WaveBackground />
             <App />
+            <TipLayer />
           </BrowserRouter>
         </ToastProvider>
       </MotionConfig>

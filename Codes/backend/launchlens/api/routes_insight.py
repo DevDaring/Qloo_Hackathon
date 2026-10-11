@@ -5,7 +5,10 @@ from __future__ import annotations
 
 import uuid
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,9 +22,49 @@ from ..security import Principal, current_principal, require_editor
 from ..services import context as ctxsvc
 from ..services import events, insight
 from . import schemas as S
-from .deps import check_project, owned
+from .deps import RateLimiter, check_project, owned
 
 router = APIRouter(prefix="/api/v1")
+assistant_limiter = RateLimiter(30, 300)
+
+
+class _ChatMsg(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=4000)
+
+
+class AssistantIn(BaseModel):
+    messages: list[_ChatMsg] = Field(min_length=1, max_length=20)
+    project_id: uuid.UUID | None = None
+
+
+@router.post("/assistant/chat", tags=["assistant"])
+async def assistant_chat(body: AssistantIn, p: Principal = Depends(current_principal), s: AsyncSession = Depends(get_session)):
+    """Floating assistant: app help + marketing answers grounded in live Qloo data. Read-only."""
+    from ..providers.base import ProviderError
+    from ..services import assistant, costs
+    if body.messages[-1].role != "user":
+        raise AppError(422, "last_message_not_user", "The last message must be the user's question.")
+    if body.project_id:
+        await check_project(s, p, body.project_id)
+    assistant_limiter.check(str(p.user_id))
+    try:
+        sample = None
+        if not body.project_id:
+            from ..models import Project
+            demos = (await s.execute(select(Project).where(Project.workspace_id == p.workspace_id, Project.is_demo.is_(True),
+                                                           Project.archived.is_(False)))).scalars().all()
+            sample = next((d.id for d in demos if d.country_code == "US"), demos[0].id if demos else None)
+        out = await assistant.chat([m.model_dump() for m in body.messages], body.project_id, sample_id=sample)
+    except ProviderError:
+        raise AppError(503, "assistant_unavailable", "The assistant is unavailable right now. Please try again in a minute.",
+                       retryable=True) from None
+    usage = out.pop("usage")
+    from ..providers import llm
+    await costs.record(workspace_id=p.workspace_id, project_id=body.project_id, provider=usage.provider, model=usage.model,
+                       operation="assistant", category="reasoning", quantity=usage.input_tokens / 1000,
+                       unit="1k_input_tokens", actual_usd=llm.cost_of(usage))
+    return out
 
 MAX_PROJECTS_PER_WORKSPACE = 40
 

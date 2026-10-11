@@ -30,7 +30,7 @@ export function AudienceCompare({
 }) {
   const q = useAudienceCompare(runId, areaId, a, b);
   return (
-    <div className="space-y-4" data-testid="audience-compare">
+    <div className="space-y-4" data-testid="audience-compare" data-tour="audience-compare">
       <div className="flex flex-wrap items-end gap-2">
         <label className="min-w-[200px] flex-1">
           <span className="label">Audience A</span>

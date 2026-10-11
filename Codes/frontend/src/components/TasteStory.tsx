@@ -21,6 +21,7 @@ import { LANG_LABEL } from '../lib/labels';
 import { useEvidenceDrawer } from './Evidence';
 import { InteractiveMedia } from './InteractiveMedia';
 import { Badge, EmptyState, ErrorState, Skeleton, Tooltip } from './ui';
+import { Tip } from './Tips';
 
 const MAX_INTERESTS = 3;
 
@@ -34,7 +35,7 @@ export const EDGE_STYLE: Record<EdgeKind, { stroke: string; dash?: string; label
 /* ------------------------------------------------------------------ small parts */
 export function GeneratedBadge({ className }: { className?: string }) {
   return (
-    <Tooltip content="Proposed by a language model from the cited evidence — a campaign hypothesis, not a Qloo fact or a result.">
+    <Tip k="generated-hypothesis">
       <span
         tabIndex={0}
         data-testid="generated-badge"
@@ -42,7 +43,7 @@ export function GeneratedBadge({ className }: { className?: string }) {
       >
         <Lightbulb className="h-3 w-3" aria-hidden /> Generated hypothesis
       </span>
-    </Tooltip>
+    </Tip>
   );
 }
 
@@ -78,7 +79,7 @@ export function CitySignalChip({ s, city }: { s: CitySignal; city?: string | nul
       <span className="text-muted">Taste lift in {city ?? 'this city'}: unknown — {s.reason ?? 'not recorded'}</span>
     );
   return (
-    <span className="inline-flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface px-3 py-1.5 text-[13px]" data-testid="city-signal">
+    <span className="inline-flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface px-3 py-1.5 text-[13px]" data-testid="city-signal" data-tip="taste-lift">
       <MapPin className="h-3.5 w-3.5 text-accent-ink" aria-hidden />
       <span>{body}</span>
       {s.state === 'available' && s.n_signal != null && (
@@ -442,6 +443,7 @@ function Diagram({ story, selected, onSelect }: { story: Story; selected?: strin
               onClick={() => open(combinedEv, 'Qloo · recommended for this combined interest set')}
               className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-surface px-2.5 py-1 text-[11px] font-semibold text-accent-ink shadow-card transition hover:border-accent hover:shadow-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               data-testid="combined-edge"
+              data-tip="combined-set"
               aria-label="Evidence: Qloo recommended these places for this combined interest set"
             >
               <FileSearch className="h-3 w-3" aria-hidden />
@@ -617,7 +619,7 @@ function ListLayout({ story, selected, onSelect }: { story: Story; selected?: st
       </Step>
       <Step n={2} title="Qloo recommendations" sub={combined ? 'Recommended for this combined interest set' : 'Qloo attributed each place to an input'}>
         {combined && (
-          <button type="button" onClick={() => open(combinedEv, 'Qloo · recommended for this combined interest set')} className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-accent/40 px-2.5 py-1 text-[11.5px] font-semibold text-accent-ink hover:border-accent" data-testid="combined-edge">
+          <button type="button" onClick={() => open(combinedEv, 'Qloo · recommended for this combined interest set')} className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-accent/40 px-2.5 py-1 text-[11.5px] font-semibold text-accent-ink hover:border-accent" data-testid="combined-edge" data-tip="combined-set">
             <FileSearch className="h-3 w-3" aria-hidden /> recommended for this combined interest set · evidence
           </button>
         )}

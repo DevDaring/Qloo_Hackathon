@@ -178,6 +178,7 @@ function VariantSwitcher({ t, onSwitch }: { t: CreativeTrace; onSwitch: (id: str
               type="button"
               onClick={() => !v.current && onSwitch(v.brief_id)}
               aria-current={v.current ? 'true' : undefined}
+              data-tip="language-switch"
               className={cn('w-[210px] rounded-xl border px-3 py-2 text-left transition [@media(pointer:coarse)]:min-h-[44px]', v.current ? 'border-brand bg-brand-soft/40' : 'border-line hover:border-fg/30 hover:bg-surface2')}
             >
               <span className="flex items-center gap-1.5 text-[11px] text-subtle">
@@ -205,7 +206,9 @@ export function PilotCard({ bid }: { bid: string }) {
     <Card className="border-2 border-dashed border-violet-300 p-4 dark:border-violet-800" data-testid="pilot-card" data-generated="true">
       <div className="flex flex-wrap items-center gap-2">
         <FlaskConical className="h-4 w-4 text-violet-700 dark:text-violet-300" aria-hidden />
-        <p className="font-display text-[15px] font-bold">{p.label}</p>
+        <p className="font-display text-[15px] font-bold" data-tip="pilot-card" tabIndex={0}>
+          {p.label}
+        </p>
         <GeneratedBadge className="ml-auto" />
       </div>
       <dl className="mt-3 grid gap-x-5 gap-y-2.5 text-[12.5px] sm:grid-cols-2">

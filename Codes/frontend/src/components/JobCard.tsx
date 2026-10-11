@@ -68,7 +68,7 @@ export function JobCard({ job, pid }: { job: Job; pid: string }) {
         </Callout>
       )}
       {attempts.length > 0 && (
-        <div className="mt-3 overflow-x-auto">
+        <div className="relative mt-3 overflow-x-auto">
           <table className="w-full text-[11.5px]">
             <thead>
               <tr className="text-left text-subtle">

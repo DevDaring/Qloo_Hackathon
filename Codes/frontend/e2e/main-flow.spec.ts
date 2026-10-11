@@ -1,5 +1,16 @@
 import { expect, test } from '@playwright/test';
 
+// the project guide opens automatically after sign-in; these flows test pages, not the guide
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('ll-guide-done', '1');
+    } catch {
+      /* ignore */
+    }
+  });
+});
+
 test('jury main flow: landing → login → sample project pages', async ({ page }) => {
   // Landing
   await page.goto('/');

@@ -237,7 +237,7 @@ function Explorer() {
               {!runs.data?.items.length && <option value="">No runs yet</option>}
             </Select>
             <ActionPreview
-              tip="Find places and audience matches for your selected cities."
+              tipKey="start-research"
               title="Start research"
               details={<p>Starts a new research run (places, climate, Qloo taste signals) with the current brief and audiences. Earlier runs stay available in the run selector. Nothing is generated or bought.</p>}
               disabledReason={prereqs.length ? `First ${prereqs.join(', ')}.` : undefined}
@@ -310,7 +310,7 @@ function Explorer() {
             )}
           </div>
 
-          <div className={cn('grid gap-4', filtersOpen ? 'lg:grid-cols-[260px_minmax(0,1fr)]' : 'lg:grid-cols-[44px_minmax(0,1fr)]')}>
+          <div className={cn('grid gap-4', filtersOpen ? 'lg:grid-cols-[260px_minmax(0,1fr)]' : 'lg:grid-cols-[44px_minmax(0,1fr)]')} data-tour="explorer">
             {/* filters */}
             <aside aria-label="Filters" className="lg:sticky lg:top-4 lg:self-start">
               {filtersOpen ? (
@@ -394,7 +394,8 @@ function Explorer() {
                   )}
                   <div className="mt-5 border-t border-line pt-4">
                     <ActionPreview
-                      tip={`Show relative taste affinity for the selected audience in ${assessments.find((a) => a.area_id === (areaId || assessments[0]?.area_id))?.area_name ?? 'the selected city'} (Qloo heatmap). It is a relative signal, not demand.`}
+                      tipKey="view-taste-layer"
+                      extra={`City: ${assessments.find((a) => a.area_id === (areaId || assessments[0]?.area_id))?.area_name ?? 'the selected city'}.`}
                       disabledReason={tasteQ.data && !tasteQ.data.available ? tasteQ.data.reason : undefined}
                     >
                       <Toggle checked={taste} onChange={setTaste} label={<span className="inline-flex items-center gap-1"><Flame className="h-3.5 w-3.5 text-violet-600" /> View taste layer</span>} description="Provider affinity heatmap — never demand." />
@@ -813,7 +814,7 @@ function PlaceDetail({ p, areaName, onClose, starred, onStar, audName, onWhy }: 
         <p className="mt-2 rounded-lg bg-warn-soft/60 px-2.5 py-1.5 text-[11.5px] text-fg">Retrieved set, not a census: absence from this list does not mean absence on the ground. A place record is not an ad slot.</p>
         <div className="mt-3 flex flex-wrap gap-2">
           {p.provider === 'qloo' && onWhy && (
-            <Button size="sm" variant="brand" icon={<Network className="h-3.5 w-3.5" />} onClick={onWhy}>
+            <Button size="sm" variant="brand" icon={<Network className="h-3.5 w-3.5" />} onClick={onWhy} data-tip="why-place">
               Why this place?
             </Button>
           )}

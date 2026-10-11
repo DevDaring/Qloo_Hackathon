@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Archive, ArchiveRestore, ArrowRight, CheckCircle2, FlaskConical, FolderPlus, ImageIcon, Lock, Map as MapIcon, Network, Plus, Sparkles, WandSparkles, Gauge } from 'lucide-react';
+import { Archive, ArchiveRestore, ArrowRight, CheckCircle2, Compass, FlaskConical, FolderPlus, ImageIcon, Lock, Map as MapIcon, Network, Plus, Sparkles, WandSparkles, Gauge } from 'lucide-react';
 import { useMe } from '../api/hooks';
 import { useFirstVisit } from '../hooks/useTheme';
 import { mutations, useApiMutation, useProjects } from '../api/hooks';
 import type { JourneyStageKey, ProjectListItem } from '../api/types';
 import { DuplicateButton } from '../components/Locked';
+import { useGuide } from '../components/Guide';
 import { PageWrap } from '../components/AppShell';
 import { Modal } from '../components/Overlay';
 import { useToast } from '../components/Toast';
@@ -19,7 +20,9 @@ export default function Projects() {
   const [archived, setArchived] = useState(false);
   const q = useProjects(archived);
   const [creating, setCreating] = useState(false);
-  const items = q.data?.items ?? [];
+  // the samples first (US before India), then the user's own projects in server order
+  const rank = (p: { is_demo: boolean; country_code: string }) => (p.is_demo ? (p.country_code === 'US' ? 0 : 1) : 2);
+  const items = [...(q.data?.items ?? [])].sort((a, b) => rank(a) - rank(b));
   const firstVisit = useFirstVisit('ll-dash-reveal');
   return (
     <PageWrap>
@@ -275,6 +278,7 @@ const MARKET_LABEL: Record<string, string> = { US: 'United States', IN: 'India' 
 
 function JuryTour({ samples }: { samples: { id: string; country_code: string; name: string }[] }) {
   const me = useMe().data;
+  const guide = useGuide();
   // US first: the judges are in the US; India stays one click away
   const ordered = [...samples].sort((a, b) => (a.country_code === 'US' ? -1 : b.country_code === 'US' ? 1 : 0));
   const [sel, setSel] = useState(ordered[0]?.id);
@@ -293,6 +297,7 @@ function JuryTour({ samples }: { samples: { id: string; country_code: string; na
       animate={{ opacity: 1, y: 0 }}
       className="relative mb-8 overflow-hidden rounded-3xl bg-[#0E1320] p-6 text-white shadow-lift sm:p-8"
       aria-label="Guided tour"
+      data-tour="samples"
     >
       <div aria-hidden className="absolute -left-16 -top-24 h-72 w-72 animate-mesh rounded-full bg-[#FF7A45]/35 blur-[90px]" />
       <div aria-hidden className="absolute -bottom-24 right-0 h-72 w-72 animate-mesh rounded-full bg-[#1F6FEB]/35 blur-[90px] [animation-delay:-6s]" />
@@ -318,12 +323,24 @@ function JuryTour({ samples }: { samples: { id: string; country_code: string; na
               </div>
             )}
           </div>
-          <Link
-            to={`/projects/${pid}`}
-            className="inline-flex h-12 items-center gap-2 rounded-xl bg-gradient-to-b from-[#FF8A5B] to-[#FF6A2F] px-5 text-[15px] font-semibold text-[#1A0E08] shadow-[0_14px_30px_-10px_rgb(255_106_47/0.75)] transition hover:brightness-105"
-          >
-            Open the sample project <ArrowRight className="h-4 w-4" />
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={guide.start}
+              disabled={!guide.available}
+              data-tip="project-guide"
+              data-testid="tour-start"
+              className="inline-flex h-12 items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-5 text-[15px] font-semibold text-white backdrop-blur transition hover:bg-white/20 disabled:opacity-60"
+            >
+              <Compass className="h-4 w-4" /> Take the guided tour
+            </button>
+            <Link
+              to={`/projects/${pid}`}
+              className="inline-flex h-12 items-center gap-2 rounded-xl bg-gradient-to-b from-[#FF8A5B] to-[#FF6A2F] px-5 text-[15px] font-semibold text-[#1A0E08] shadow-[0_14px_30px_-10px_rgb(255_106_47/0.75)] transition hover:brightness-105"
+            >
+              Open the sample project <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
         </div>
         <p className="mt-1.5 max-w-2xl text-sm text-white/65">Everything below is live data from the backend: research runs, evidence, strategies and real AI-generated flyers and videos. Synthetic product specs are labelled as such.</p>
         <ol className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">

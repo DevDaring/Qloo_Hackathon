@@ -55,12 +55,21 @@ function geometry(w: number, h: number) {
 
 const easeOutCubic = (x: number) => 1 - Math.pow(1 - Math.min(1, Math.max(0, x)), 3);
 
-export function SpinningGlobe() {
+/**
+ * `fill`: a self-contained globe centred in its parent (e.g. the sign-in brand panel), with its own
+ * clock, starting over `centerLon`/`centerLat`. Without it, the globe matches the landing intro.
+ */
+export function SpinningGlobe({ fill = false, centerLon = -98, centerLat = 28, sizeRatio = 0.8 }: { fill?: boolean; centerLon?: number; centerLat?: number; sizeRatio?: number } = {}) {
   const wrap = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
-    const remount = clockStart !== null; // already on screen (placeholder → intro): no second fade-in
-    clockStart ??= performance.now();
+    const ownStart = performance.now();
+    const remount = fill ? false : clockStart !== null; // already on screen (placeholder → intro): no second fade-in
+    if (!fill) clockStart ??= performance.now();
+    const elapsed = () => (fill ? (performance.now() - ownStart) / 1000 : introElapsed());
+    const LAT = fill ? centerLat : LAT0;
+    const ROT0 = fill ? centerLon : INTRO_ROT0;
+    const SPEED = fill ? 6 : INTRO_ROT_V;
     const host = wrap.current!.parentElement!;
     if (remount) {
       wrap.current!.style.transition = 'none';
@@ -87,12 +96,13 @@ export function SpinningGlobe() {
     const shadeLayer = document.createElement('canvas'); // limb darkening + rim light, composited on the GPU
 
     const place = () => {
+      if (!alive || !wrap.current) return;
       const r = host.getBoundingClientRect();
-      geo = geometry(r.width, r.height);
+      geo = fill ? { radius: (Math.min(r.width, r.height) * sizeRatio) / 2, cx: r.width / 2, cy: r.height / 2 } : geometry(r.width, r.height);
       const size = geo.radius * 2;
       Object.assign(wrap.current!.style, { width: `${size}px`, height: `${size}px`, left: `${geo.cx - geo.radius}px`, top: `${geo.cy - geo.radius}px` });
       // modest internal resolution: the canvas globe is only on screen for about a second
-      const n = Math.round(Math.min(400, size * Math.min(window.devicePixelRatio || 1, 1.25)));
+      const n = Math.round(Math.min(fill ? 560 : 400, size * Math.min(window.devicePixelRatio || 1, 1.25)));
       if (n === N) return;
       N = n;
       cv.width = cv.height = N;
@@ -104,8 +114,8 @@ export function SpinningGlobe() {
       const list: number[] = [];
       const v = new Float32Array(N * N);
       const u = new Float32Array(N * N);
-      const s0 = Math.sin((LAT0 * Math.PI) / 180);
-      const c0 = Math.cos((LAT0 * Math.PI) / 180);
+      const s0 = Math.sin((LAT * Math.PI) / 180);
+      const c0 = Math.cos((LAT * Math.PI) / 180);
       for (let py = 0; py < N; py++) {
         for (let px = 0; px < N; px++) {
           const x = (px + 0.5 - R) / R;
@@ -115,7 +125,7 @@ export function SpinningGlobe() {
           const c = Math.asin(rho);
           const sc = Math.sin(c);
           const cc = Math.cos(c);
-          const lat = rho === 0 ? LAT0 : (Math.asin(cc * s0 + (y * sc * c0) / rho) * 180) / Math.PI;
+          const lat = rho === 0 ? LAT : (Math.asin(cc * s0 + (y * sc * c0) / rho) * 180) / Math.PI;
           const lon = (Math.atan2(x * sc, rho * cc * c0 - y * sc * s0) * 180) / Math.PI;
           const i = py * N + px;
           list.push(i);
@@ -155,13 +165,13 @@ export function SpinningGlobe() {
     };
 
     const draw = (now = performance.now()) => {
-      if (!alive) return;
-      if (tex && out && now - lastDraw >= 24) {
+      if (!alive || !wrap.current) return;
+      if (tex && out && now - lastDraw >= (fill ? 40 : 24) && !(fill && document.hidden)) {
         lastDraw = now;
         if (bound !== tex) bind(tex);
-        const t = reduce ? 0 : introElapsed();
+        const t = reduce ? 0 : elapsed();
         const tw = tex.width;
-        const off = ((((INTRO_ROT0 + INTRO_ROT_V * t + 180) / 360) % 1) + 1) % 1 * tw;
+        const off = ((((ROT0 + SPEED * t + 180) / 360) % 1) + 1) % 1 * tw;
         for (let n = 0; n < idx.length; n++) {
           const i = idx[n];
           let u = ucol[i] + off;
@@ -172,7 +182,7 @@ export function SpinningGlobe() {
         g.putImageData(out, 0, 0);
         g.drawImage(shadeLayer, 0, 0);
         // the same gentle scale-in as the MapLibre camera (zoom − 0.55·(1 − ease))
-        wrap.current!.style.transform = `scale(${Math.pow(2, -0.55 * (1 - easeOutCubic(t / 2.4)))})`;
+        wrap.current!.style.transform = fill ? 'none' : `scale(${Math.pow(2, -0.55 * (1 - easeOutCubic(t / 2.4)))})`;
         wrap.current!.style.opacity = '1';
         if (reduce) return;
       }
@@ -199,6 +209,7 @@ export function SpinningGlobe() {
       ro.disconnect();
       cancelAnimationFrame(raf);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return (
     <div ref={wrap} aria-hidden className="pointer-events-none absolute opacity-0 transition-opacity duration-300 will-change-transform">

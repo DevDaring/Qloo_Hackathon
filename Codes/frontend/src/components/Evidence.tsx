@@ -8,6 +8,7 @@ import type { EvidenceCard } from '../api/types';
 import { cn, fmtDate, humanize } from '../lib/format';
 import { EVIDENCE_BADGES, KIND_TO_BADGE } from '../lib/labels';
 import { Drawer } from './Overlay';
+import { Tip } from './Tips';
 import { EmptyState, ErrorState, Skeleton, Tooltip } from './ui';
 
 /* ------------------------------------------------------------------ badges */
@@ -15,7 +16,7 @@ export function EvidenceBadge({ badge, kind, className, size = 'sm' }: { badge?:
   const key = badge ?? (kind ? KIND_TO_BADGE[kind] : undefined) ?? 'Unknown';
   const b = EVIDENCE_BADGES[key] ?? EVIDENCE_BADGES.Unknown;
   return (
-    <Tooltip content={<><b>{b.label}.</b> {b.meaning}</>}>
+    <Tip k={`evidence-${key in EVIDENCE_BADGES ? key : 'Unknown'}`}>
       <span
         tabIndex={0}
         className={cn(
@@ -28,7 +29,7 @@ export function EvidenceBadge({ badge, kind, className, size = 'sm' }: { badge?:
         <span className={cn('h-1.5 w-1.5 rounded-full', b.dot)} aria-hidden />
         {b.label}
       </span>
-    </Tooltip>
+    </Tip>
   );
 }
 

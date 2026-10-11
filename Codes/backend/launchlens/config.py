@@ -71,6 +71,11 @@ class Settings(BaseSettings):
     OPENROUTER_BASE_URL: str = Field(default="https://openrouter.ai/api/v1",
                                      validation_alias=_alias("OPENROUTER_BASE_URL", "OPENROUTER_API_BASE_URL"))
     OPENROUTER_MODEL: str = "openai/gpt-4.1-mini"
+    # second OpenRouter account, used after the first in both the reasoning and image fallback chains
+    OPENROUTER_FALLBACK_API_KEY: str = Field(default="", validation_alias=_alias("OPENROUTER_FALLBACK_API_KEY", "OPENROUTER_API_KEY_2"))
+    OPENROUTER_IMAGE_MODEL: str = "google/gemini-2.5-flash-image"
+    # reasoning fallbacks after NanoGPT's two keys, in order (LLM_FALLBACK_PROVIDER is appended last)
+    LLM_FALLBACK_CHAIN: str = "openrouter,openrouter_2"
     OPENROUTER_PROVIDER_ALLOWLIST: str = ""
     OPENROUTER_DATA_POLICY: str = "deny"
     LLM_PRIMARY_PROVIDER: str = "nanogpt"  # owner's choice 2026-10-11: OpenAI and xAI accounts had no credits
@@ -198,7 +203,7 @@ class Settings(BaseSettings):
     def secret_values(self) -> list[str]:
         """Every configured secret, for redaction. Never logged or returned."""
         vals = [self.QLOO_API_KEY, self.OPENAI_API_KEY, self.OPENROUTER_API_KEY, self.XAI_API_KEY,
-                self.NANOGPT_API_KEY, self.NANOGPT_FALLBACK_API_KEY,
+                self.NANOGPT_API_KEY, self.NANOGPT_FALLBACK_API_KEY, self.OPENROUTER_FALLBACK_API_KEY,
                 self.TTS_API_KEY, self.FAL_KEY, self.SARVAM_API_KEY, self.GEOCODING_API_KEY, self.PLACES_API_KEY,
                 self.WEATHER_API_KEY, self.S3_SECRET_ACCESS_KEY, self.S3_ACCESS_KEY_ID, self.AUTH_SECRET]
         db_pw = _db_password(self.DATABASE_URL)

@@ -81,7 +81,7 @@ export default function ProductBrief() {
         />
       </PageHeader>
       <AnimatePresence mode="wait">
-        <motion.div key={tab} id={anchor} className="scroll-mt-28" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2 }}>
+        <motion.div key={tab} id={anchor} data-tour={tab === 'facts' ? 'brief' : undefined} className="scroll-mt-28" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2 }}>
           {locked && tab !== 'versions' && (
             <p className="mb-4 flex items-center gap-2 rounded-xl border border-accent/25 bg-accent-soft/40 px-3 py-2 text-[13px]" role="note">
               <Lock className="h-3.5 w-3.5 text-accent-ink" aria-hidden /> Read-only sample: the brief is shown as it was used for the research. Duplicate the project to edit it.

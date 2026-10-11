@@ -1,5 +1,16 @@
 import { expect, test } from '@playwright/test';
 
+// the project guide opens automatically after sign-in; these flows test pages, not the guide
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('ll-guide-done', '1');
+    } catch {
+      /* ignore */
+    }
+  });
+});
+
 /**
  * The US sample (Pulse Go portable speaker): a different product category with its own
  * venues, English and Spanish creative, and a valid with/without-Qloo comparison.

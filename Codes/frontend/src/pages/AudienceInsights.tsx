@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Archive, ArrowLeftRight, CircleHelp, Fingerprint, Languages, Link2, Network, Pencil, Plus, Search, UserRound, Users } from 'lucide-react';
 import { ApiError, type Schemas } from '../api/client';
@@ -64,7 +65,7 @@ export default function AudienceInsights() {
       )}
       {q.error && <ErrorState error={q.error} onRetry={() => q.refetch()} />}
       {q.data && q.data.items.length === 0 && <EmptyState icon={<Users className="h-5 w-5" />} title="No audiences yet" action={<Button onClick={() => setEdit('new')}>Add an audience</Button>}>Define at least one audience before research.</EmptyState>}
-      <motion.div variants={stagger(0.06)} initial="hidden" animate="show" className="grid gap-5 lg:grid-cols-2">
+      <motion.div variants={stagger(0.06)} initial="hidden" animate="show" className="grid gap-5 lg:grid-cols-2" data-tour="interests">
         {q.data?.items.map((a) => (
           <motion.div key={a.id} variants={fadeUp}>
             <AudienceCard a={a} onEdit={() => setEdit(a)} qlooOff={!!qlooOff} />
@@ -335,13 +336,16 @@ function ExplainSection() {
   const auds = (project?.audiences ?? []).map((a) => ({ id: a.id, name: a.name }));
   const areaId = areas.some((a) => a.area_id === sel.areaId) ? sel.areaId : areas[0]?.area_id;
   const audId = auds.some((a) => a.id === sel.audienceId) ? sel.audienceId : auds[0]?.id;
-  const [tab, setTab] = useState<'story' | 'compare'>('story');
+  const [params] = useSearchParams();
+  const viewParam = params.get('view');
+  const [tab, setTab] = useState<'story' | 'compare'>(viewParam === 'compare' ? 'compare' : 'story');
+  useEffect(() => setTab(viewParam === 'compare' ? 'compare' : 'story'), [viewParam]);
   const [pair, setPair] = useState<[string, string] | null>(null);
   const a = pair?.[0] ?? audId;
   const b = pair?.[1] ?? auds.find((x) => x.id !== a)?.id;
   if (!runs.isLoading && !run) return null;
   return (
-    <Card className="mb-8 scroll-mt-28" id="taste-story">
+    <Card className="mb-8 scroll-mt-28" id="taste-story" data-tour="taste-story">
       <CardHeader
         icon={<Network className="h-4 w-4" />}
         title="Why these places?"
@@ -354,8 +358,8 @@ function ExplainSection() {
             value={tab}
             onChange={setTab}
             tabs={[
-              { key: 'story', label: 'Taste story', icon: <Network className="h-3.5 w-3.5" /> },
-              { key: 'compare', label: 'Compare two audiences', icon: <ArrowLeftRight className="h-3.5 w-3.5" /> },
+              { key: 'story', label: 'Taste story', icon: <Network className="h-3.5 w-3.5" />, tip: 'why-places' },
+              { key: 'compare', label: 'Compare two audiences', icon: <ArrowLeftRight className="h-3.5 w-3.5" />, tip: 'compare-audiences' },
             ]}
           />
           <label className="ml-auto flex items-center gap-2 text-[13px] text-muted">

@@ -1,5 +1,15 @@
 import { test, type Page } from '@playwright/test';
 
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('ll-guide-done', '1');
+    } catch {
+      /* ignore */
+    }
+  });
+});
+
 /** Scroll to the bottom step by step and back, so scroll-triggered content has revealed. */
 async function scrollThrough(page: Page) {
   const h = await page.evaluate(() => document.documentElement.scrollHeight);

@@ -198,6 +198,51 @@
       "usd": 0.0016,
       "source": "NanoGPT x_nanogpt_pricing on a live call 2026-10-11 (48 in + 9 out tokens = $0.0000336)",
       "effective": "2026-10-11"
+    },
+    {
+      "provider": "openrouter",
+      "model": "openai/gpt-4.1-mini",
+      "operation": "reasoning",
+      "unit": "1k_input_tokens",
+      "usd": 0.0004,
+      "source": "OpenRouter list price for openai/gpt-4.1-mini",
+      "effective": "2026-10-11"
+    },
+    {
+      "provider": "openrouter",
+      "model": "openai/gpt-4.1-mini",
+      "operation": "reasoning",
+      "unit": "1k_output_tokens",
+      "usd": 0.0016,
+      "source": "OpenRouter list price for openai/gpt-4.1-mini",
+      "effective": "2026-10-11"
+    },
+    {
+      "provider": "openrouter_2",
+      "model": "openai/gpt-4.1-mini",
+      "operation": "reasoning",
+      "unit": "1k_input_tokens",
+      "usd": 0.0004,
+      "source": "OpenRouter list price for openai/gpt-4.1-mini",
+      "effective": "2026-10-11"
+    },
+    {
+      "provider": "openrouter_2",
+      "model": "openai/gpt-4.1-mini",
+      "operation": "reasoning",
+      "unit": "1k_output_tokens",
+      "usd": 0.0016,
+      "source": "OpenRouter list price for openai/gpt-4.1-mini",
+      "effective": "2026-10-11"
+    },
+    {
+      "provider": "openrouter",
+      "model": "google/gemini-2.5-flash-image",
+      "operation": "image",
+      "unit": "image",
+      "usd": 0.04,
+      "source": "OpenRouter list price (\u22481290 output tokens \u00d7 $0.00003)",
+      "effective": "2026-10-11"
     }
   ]
 }

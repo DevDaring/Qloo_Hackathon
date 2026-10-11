@@ -1210,6 +1210,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/assistant/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Assistant Chat
+         * @description Floating assistant: app help + marketing answers grounded in live Qloo data. Read-only.
+         */
+        post: operations["assistant_chat_api_v1_assistant_chat_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}/taste-story": {
         parameters: {
             query?: never;
@@ -1408,6 +1428,13 @@ export interface components {
             polygon?: number[][] | null;
             /** Shortlisted Place Ids */
             shortlisted_place_ids?: string[];
+        };
+        /** AssistantIn */
+        AssistantIn: {
+            /** Messages */
+            messages: components["schemas"]["_ChatMsg"][];
+            /** Project Id */
+            project_id?: string | null;
         };
         /** AudienceIn */
         AudienceIn: {
@@ -2079,6 +2106,16 @@ export interface components {
              * @default false
              */
             reveal: boolean;
+        };
+        /** _ChatMsg */
+        _ChatMsg: {
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "user" | "assistant";
+            /** Content */
+            content: string;
         };
     };
     responses: never;
@@ -4857,6 +4894,39 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assistant_chat_api_v1_assistant_chat_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantIn"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

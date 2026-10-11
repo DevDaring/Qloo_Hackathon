@@ -10,11 +10,14 @@ import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Info, Lock, X } from 'lucide-react';
 import { cn } from '../lib/format';
-import { Tooltip } from './ui';
+import { TIPS } from '../lib/tips';
+import { setTipContent, useDescribedBy, type TipContent } from './Tips';
 import { LOCK_REASON, useLocked } from './Locked';
 
 export function ActionPreview({
   tip,
+  tipKey,
+  extra,
   title,
   details,
   disabledReason,
@@ -23,8 +26,12 @@ export function ActionPreview({
   inlineReason = true,
   edit = false,
 }: {
-  /** one-line explanation shown on hover/focus */
-  tip: ReactNode;
+  /** one-line explanation (used when there is no registry entry) */
+  tip?: ReactNode;
+  /** registry key in lib/tips.ts — title, body, "New" badge and what clicking does */
+  tipKey?: string;
+  /** a dynamic line such as the current estimate */
+  extra?: ReactNode;
   /** heading of the richer popover (defaults to none) */
   title?: string;
   /** richer content (estimate, requirements, what happens next) shown on click/tap of the info button */
@@ -42,11 +49,29 @@ export function ActionPreview({
     disabledReason = LOCK_REASON;
     if (isValidElement(children)) children = cloneElement(children as ReactElement<{ disabled?: boolean }>, { disabled: true });
   }
+  const id = useId();
+  const host = useRef<HTMLSpanElement>(null);
+  const entry = tipKey ? TIPS[tipKey] : undefined;
+  const content: TipContent = entry
+    ? { ...entry, extra, disabled: disabledReason }
+    : { title, ...(typeof tip === 'string' ? { body: tip } : { node: tip }), extra, disabled: disabledReason };
+  useEffect(() => {
+    setTipContent(id, content);
+  });
+  useEffect(() => () => setTipContent(id, null), [id]);
+  useDescribedBy(host, `apdesc${id}`);
   return (
     <span className={cn('inline-flex flex-col items-start gap-1', className)}>
       <span className="inline-flex items-center gap-1">
-        <Tooltip content={<>{tip}{disabledReason ? <span className="mt-1 block font-semibold">Unavailable: {disabledReason}</span> : null}</>}>{children}</Tooltip>
-        {details && <InfoPopover title={title} body={details} />}
+        <span ref={host} className="relative inline-flex" data-tip-ref={id}>
+          {children}
+          <span id={`apdesc${id}`} className="sr-only">
+            {entry ? [entry.title, entry.body, entry.click && `If you click: ${entry.click}`].filter(Boolean).join('. ') : tip}
+            {extra ? <> {extra}</> : null}
+            {disabledReason ? <> Unavailable: {disabledReason}</> : null}
+          </span>
+        </span>
+        {details && <InfoPopover title={title ?? entry?.title} body={details} />}
       </span>
       {disabledReason && inlineReason && (
         <span className="inline-flex max-w-[280px] items-start gap-1 text-[11.5px] leading-snug text-warn" role="note">

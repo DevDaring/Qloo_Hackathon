@@ -55,14 +55,24 @@ def _providers() -> list[tuple[str, str, str, str]]:
         "nanogpt_backup": (nano, settings.NANOGPT_FALLBACK_API_KEY, settings.NANOGPT_TEXT_MODEL),
         "openai": (settings.OPENAI_BASE_URL, settings.OPENAI_API_KEY, settings.OPENAI_MODEL),
         "openrouter": (settings.OPENROUTER_BASE_URL, settings.OPENROUTER_API_KEY, settings.OPENROUTER_MODEL),
+        "openrouter_2": (settings.OPENROUTER_BASE_URL, settings.OPENROUTER_FALLBACK_API_KEY, settings.OPENROUTER_MODEL),
         "xai": (settings.XAI_BASE_URL, settings.XAI_API_KEY, settings.XAI_TEXT_MODEL),
     }
     order = [settings.LLM_PRIMARY_PROVIDER]
     if settings.LLM_PRIMARY_PROVIDER == "nanogpt" and settings.NANOGPT_FALLBACK_API_KEY != settings.NANOGPT_API_KEY:
         order.append("nanogpt_backup")  # same provider and data policy, second key
-    if settings.LLM_ALLOW_FALLBACK and settings.LLM_FALLBACK_PROVIDER not in order:
-        order.append(settings.LLM_FALLBACK_PROVIDER)
-    return [(n, *table[n]) for n in order if n in table and table[n][1]]
+    if settings.LLM_ALLOW_FALLBACK:
+        for n in [*settings.LLM_FALLBACK_CHAIN.split(","), settings.LLM_FALLBACK_PROVIDER]:
+            n = n.strip()
+            if n and n not in order:
+                order.append(n)
+    seen_keys: set[str] = set()
+    out = []
+    for n in order:
+        if n in table and table[n][1] and table[n][1] not in seen_keys:  # the same key twice is not a fallback
+            seen_keys.add(table[n][1])
+            out.append((n, *table[n]))
+    return out
 
 
 _down_until: dict[str, float] = {}
@@ -79,7 +89,7 @@ def primary_model() -> str:
 
 def _headers(name: str, key: str) -> dict:
     h = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-    if name == "openrouter":
+    if name.startswith("openrouter"):
         h["HTTP-Referer"] = settings.APP_BASE_URL
         h["X-Title"] = settings.APP_NAME
     return h
@@ -89,7 +99,7 @@ def _body(name: str, model: str, messages: list[dict], json_mode: bool, temperat
     body: dict = {"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens}
     if json_mode:
         body["response_format"] = {"type": "json_object"}
-    if name == "openrouter":
+    if name.startswith("openrouter"):
         prov: dict = {"data_collection": settings.OPENROUTER_DATA_POLICY or "deny", "require_parameters": True}
         if settings.OPENROUTER_PROVIDER_ALLOWLIST:
             prov["only"] = [p.strip() for p in settings.OPENROUTER_PROVIDER_ALLOWLIST.split(",") if p.strip()]

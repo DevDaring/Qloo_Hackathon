@@ -54,7 +54,7 @@ export function RunConsole() {
     );
 
   return (
-    <section aria-label="Run console" className="pointer-events-none sticky bottom-0 z-30 mt-auto">
+    <section aria-label="Run console" data-run-console className="pointer-events-none sticky bottom-0 z-30 mt-auto">
       <div className="pointer-events-auto mx-auto w-full">
         <div className={cn('border-t border-line bg-surface/90 shadow-[0_-12px_30px_-18px_rgb(14_19_32/0.35)] backdrop-blur-xl', open && 'bg-surface/95')}>
           {/* collapsed bar */}
@@ -136,7 +136,7 @@ export function RunConsole() {
                           </Editable>
                         )}
                         {!active && (
-                          <ActionPreview edit inlineReason={false} tip="Find places and audience matches for your selected cities." disabledReason={researchPrereqs(project).length ? `First ${researchPrereqs(project).join(', ')}.` : undefined}>
+                          <ActionPreview edit inlineReason={false} tipKey="start-research" disabledReason={researchPrereqs(project).length ? `First ${researchPrereqs(project).join(', ')}.` : undefined}>
                           <Button
                             size="sm"
                             variant="outline"

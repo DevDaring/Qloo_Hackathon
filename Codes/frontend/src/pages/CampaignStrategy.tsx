@@ -140,7 +140,7 @@ function StrategyView({ sid }: { sid: string }) {
         </Callout>
       )}
       {/* hero */}
-      <Card className="relative overflow-hidden">
+      <Card className="relative overflow-hidden" data-tour="strategy">
         <div aria-hidden className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-gradient-to-br from-[#FF7A45]/20 to-[#1F6FEB]/20 blur-3xl" />
         <div className="relative grid gap-6 p-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
           <div>

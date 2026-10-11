@@ -144,15 +144,15 @@ export default function Results() {
           )}
           {data && (
             <Callout tone="warn" icon={<ShieldAlert className="h-4 w-4 text-warn" />} title="Attribution and causality">
-              <ul className="list-disc space-y-0.5 pl-5">{data.limitations.map((l) => <li key={l}>{l}</li>)}</ul>
+              <ul className="list-disc space-y-0.5 pl-5">{data.limitations.map((l, li) => <li key={`${l}-${li}`}>{l}</li>)}</ul>
             </Callout>
           )}
           {data && data.hypotheses.length > 0 && (
             <Card>
               <CardHeader icon={<FlaskConical className="h-4 w-4" />} title="What the strategies set out to test" subtitle="Planning hypotheses and KPI targets — not results. Compare them with the actuals above yourself." />
               <div className="grid gap-4 p-4 md:grid-cols-2">
-                {data.hypotheses.map((h) => (
-                  <div key={h.strategy} className="rounded-2xl border border-dashed border-warn/40 bg-warn-soft/30 p-4">
+                {data.hypotheses.map((h, hi) => (
+                  <div key={`${h.strategy}-${hi}`} className="rounded-2xl border border-dashed border-warn/40 bg-warn-soft/30 p-4">
                     <p className="font-semibold">{h.strategy}</p>
                     <ul className="mt-2 space-y-1 text-[13px]">
                       {h.feature_hypotheses.map((f, i) => (
@@ -160,8 +160,8 @@ export default function Results() {
                       ))}
                     </ul>
                     <ul className="mt-2 space-y-1 text-xs text-muted">
-                      {h.kpis_to_test.map((k) => (
-                        <li key={k.metric}>• {k.metric}: <i>{k.target_to_test}</i> (target to test)</li>
+                      {h.kpis_to_test.map((k, ki) => (
+                        <li key={`${k.metric}-${ki}`}>• {k.metric}: <i>{k.target_to_test}</i> (target to test)</li>
                       ))}
                     </ul>
                   </div>
@@ -228,8 +228,8 @@ function ImportForm({ currency, areas }: { currency: string; areas: string[] }) 
         </div>
       ))}
       <datalist id="result-areas">
-        {areas.map((a) => (
-          <option key={a} value={a} />
+        {areas.map((a, ai) => (
+          <option key={`${a}-${ai}`} value={a} />
         ))}
       </datalist>
       <Button variant="ghost" size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setRows((rs) => [...rs, blank(currency)])}>

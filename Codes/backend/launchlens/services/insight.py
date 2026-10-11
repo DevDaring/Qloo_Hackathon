@@ -237,12 +237,17 @@ async def taste_story(s: AsyncSession, run: ResearchRun, area_id: uuid.UUID, aud
                                    "label": "strategy cites this placement" if str(lead.id) in picks
                                    else "strategy for the same audience and area", "cites": str(lead.id) in picks,
                                    "evidence_ids": [i for i in msg.get("evidence_ids") or []]})
-        b = (await s.execute(select(CreativeBrief).where(CreativeBrief.strategy_version_id == sv.id,
-                                                         CreativeBrief.is_current.is_(True))
-                             .order_by(CreativeBrief.created_at.desc()).limit(1))).scalar_one_or_none()
+        briefs = (await s.execute(select(CreativeBrief).where(CreativeBrief.strategy_version_id == sv.id,
+                                                              CreativeBrief.is_current.is_(True))
+                                  .order_by(CreativeBrief.created_at.desc()))).scalars().all()
+        b, flyer = (briefs[0] if briefs else None), None
+        for cand in briefs:  # the newest current brief that already has a flyer, else the newest brief
+            f = (await s.execute(select(Asset).where(Asset.brief_id == cand.id, Asset.kind == "flyer", Asset.deleted_at.is_(None))
+                                 .order_by(Asset.stale.asc(), Asset.created_at.desc()).limit(1))).scalar_one_or_none()
+            if f:
+                b, flyer = cand, f
+                break
         if b:
-            flyer = (await s.execute(select(Asset).where(Asset.brief_id == b.id, Asset.kind == "flyer", Asset.deleted_at.is_(None))
-                                     .order_by(Asset.stale.asc(), Asset.created_at.desc()).limit(1))).scalar_one_or_none()
             d = (b.decisions or [{}])[0]
             story["creative"] = {"brief_id": str(b.id), "language": b.language, "headline": (b.content or {}).get("headline"),
                                  "decision": {"text": d.get("decision"), "rationale": d.get("rationale"),

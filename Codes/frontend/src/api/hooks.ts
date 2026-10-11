@@ -402,5 +402,6 @@ export const mutations = {
   applyRevision: (pid: string, b: Partial<Schemas['RevisionApplyIn']> & { kind: Schemas['RevisionApplyIn']['kind'] }) =>
     post<{ revision: unknown; run?: T.Run; job?: T.Job }>(`/projects/${pid}/revisions/apply`, b),
   consult: (pid: string, message: string, runId?: string) => post<T.ConsultAnswer>(`/projects/${pid}/consult`, { message, run_id: runId }),
+  assistant: (messages: T.AssistantMessage[], projectId?: string) => post<T.AssistantReply>('/assistant/chat', { messages, project_id: projectId }),
   duplicateProject: (pid: string) => post<T.Project & { copied_from: string; next: string }>(`/projects/${pid}/duplicate`),
 };

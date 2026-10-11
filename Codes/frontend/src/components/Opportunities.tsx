@@ -15,7 +15,11 @@ export function OpportunitiesCard({ runId, className }: { runId?: string; classN
     <Card className={className} data-testid="opportunities">
       <CardHeader
         icon={<Compass className="h-4 w-4" />}
-        title="Underexplored opportunities"
+        title={
+          <span data-tip="opportunities" tabIndex={0} className="cursor-help">
+            Underexplored opportunities
+          </span>
+        }
         subtitle="Taste-relevant venues not yet shortlisted. Affinity is relevance to the audience’s interests; popularity is a separate, general number. Neither measures competition or willingness to partner."
       />
       <div className="p-5">

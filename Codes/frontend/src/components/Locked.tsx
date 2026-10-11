@@ -51,7 +51,7 @@ export function DuplicateButton({ pid, className, size = 'sm', variant = 'brand'
   const tooMany = dup.error instanceof ApiError && dup.error.code === 'too_many_projects';
   return (
     <span className="inline-flex flex-col items-start gap-1">
-      <Button size={size} variant={variant} className={className} icon={<CopyPlus className="h-4 w-4" />} loading={dup.isPending} onClick={() => dup.mutate()} data-testid="duplicate-project">
+      <Button size={size} variant={variant} className={className} icon={<CopyPlus className="h-4 w-4" />} loading={dup.isPending} onClick={() => dup.mutate()} data-testid="duplicate-project" data-tip="duplicate">
         {label}
       </Button>
       {tooMany && (
@@ -65,7 +65,7 @@ export function DuplicateButton({ pid, className, size = 'sm', variant = 'brand'
 
 export function LockedBanner({ pid }: { pid: string }) {
   return (
-    <div className="border-b border-accent/25 bg-accent-soft/50" data-testid="locked-banner" role="region" aria-label="Read-only sample">
+    <div className="border-b border-accent/25 bg-accent-soft/50" data-testid="locked-banner" data-tour="locked-banner" role="region" aria-label="Read-only sample">
       <div className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5 sm:px-6 lg:px-10">
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface text-accent-ink shadow-card" aria-hidden>
           <Lock className="h-3.5 w-3.5" />

@@ -122,7 +122,8 @@ async def get_project(project_id: uuid.UUID, p: Principal = Depends(current_prin
     ctx = await ctxsvc.load(project_id)
     counts = await assetsvc.count_for_project(project_id)
     runs = (await s.execute(select(ResearchRun).where(ResearchRun.project_id == project_id)
-                            .order_by(ResearchRun.created_at.desc()).limit(10))).scalars().all()
+                            .order_by((ResearchRun.experiment_label != "").asc(), ResearchRun.created_at.desc())
+                            .limit(10))).scalars().all()
     n_briefs = (await s.execute(select(func.count()).select_from(CreativeBrief).where(
         CreativeBrief.project_id == project_id, CreativeBrief.is_current.is_(True)))).scalar_one()
     active_jobs = (await s.execute(select(func.count()).select_from(Job).where(

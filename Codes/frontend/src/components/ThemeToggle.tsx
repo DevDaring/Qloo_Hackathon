@@ -12,7 +12,7 @@ export function ThemeToggle({ className, onDark }: { className?: string; onDark?
       onClick={toggle}
       aria-pressed={dark}
       aria-label={dark ? 'Dark theme on — switch to light' : 'Light theme on — switch to dark'}
-      title={dark ? 'Switch to light theme' : 'Switch to dark theme'}
+      data-tip="theme-toggle"
       className={cn(
         'inline-flex h-9 w-[62px] shrink-0 items-center rounded-full border p-1 transition-colors duration-300',
         onDark || dark ? 'border-white/15 bg-white/10' : 'border-line bg-surface2',
