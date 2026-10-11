@@ -171,7 +171,7 @@ function ContextBar() {
             {runs.map((r) => (
               <option key={r.id} value={r.id}>
                 {shortId(r.id)} · {r.status.replace(/_/g, ' ')}
-                {r.qloo_enabled ? '' : ' · no Qloo'} · {timeAgo(r.created_at)}
+                {' · '}{timeAgo(r.created_at)}
               </option>
             ))}
           </select>

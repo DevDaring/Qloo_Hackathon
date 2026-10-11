@@ -83,10 +83,10 @@ async def create_run(project_id: uuid.UUID, body: S.RunIn, p: Principal = Depend
 @router.get("/projects/{project_id}/research-runs", tags=["research"])
 async def list_runs(project_id: uuid.UUID, p: Principal = Depends(current_principal), s: AsyncSession = Depends(get_session)):
     await check_project(s, p, project_id)
-    # experiment comparison arms are listed after real runs, so "latest run" means the latest real one
-    rows = (await s.execute(select(ResearchRun).where(ResearchRun.project_id == project_id)
-                            .order_by((ResearchRun.experiment_label != "").asc(), ResearchRun.created_at.desc())
-                            .limit(50))).scalars().all()
+    # the app always researches with Qloo; internal comparison runs are not listed
+    rows = (await s.execute(select(ResearchRun).where(ResearchRun.project_id == project_id,
+                                                      ResearchRun.experiment_label == "", ResearchRun.qloo_enabled.is_(True))
+                            .order_by(ResearchRun.created_at.desc()).limit(50))).scalars().all()
     return {"items": [run_out(r) for r in rows]}
 
 

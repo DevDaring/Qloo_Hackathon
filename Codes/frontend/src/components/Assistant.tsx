@@ -9,7 +9,7 @@
  *  - hidden while the project guide runs, so the two never collide
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent as RKeyboardEvent } from 'react';
-import { useMatch, useNavigate } from 'react-router-dom';
+import { useLocation, useMatch, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowRight, Fingerprint, Loader2, MessageCircle, Minus, RotateCcw, Send, Sparkles, SquarePen, X } from 'lucide-react';
 import { ApiError } from '../api/client';
@@ -17,6 +17,13 @@ import { mutations, useProject } from '../api/hooks';
 import type { AssistantReply, QlooLookup } from '../api/types';
 import { cn } from '../lib/format';
 import { useGuide } from './Guide';
+import { loadSelection } from './ProjectContext';
+
+const PAGE_NAMES: Record<string, string> = {
+  '': 'Overview', brief: 'Product brief', audiences: 'Audience insights', explorer: 'Market explorer', compare: 'Location comparison',
+  strategy: 'Campaign strategy', studio: 'Ad studio', assets: 'Assets & exports', results: 'Results', settings: 'Settings',
+};
+const LAST_PROJECT = 'll-assistant-last-project';
 
 interface Turn {
   role: 'user' | 'assistant';
@@ -72,7 +79,26 @@ function useBottomOffset() {
 export function Assistant() {
   const guide = useGuide();
   const match = useMatch('/projects/:pid/*');
-  const pid = match?.params.pid;
+  const loc = useLocation();
+  const routePid = match?.params.pid;
+  // the chat refers to the project on screen; elsewhere, to the last project opened in this session
+  const [lastPid, setLastPid] = useState<string | undefined>(() => {
+    try {
+      return sessionStorage.getItem(LAST_PROJECT) ?? undefined;
+    } catch {
+      return undefined;
+    }
+  });
+  useEffect(() => {
+    if (!routePid) return;
+    setLastPid(routePid);
+    try {
+      sessionStorage.setItem(LAST_PROJECT, routePid);
+    } catch {
+      /* storage unavailable */
+    }
+  }, [routePid]);
+  const pid = routePid ?? lastPid;
   const project = useProject(pid).data;
   const nav = useNavigate();
   const reduce = useReducedMotion();
@@ -145,7 +171,16 @@ export function Assistant() {
       const t = window.setTimeout(() => setPhase('qloo'), 1500);
       try {
         const msgs = next.slice(-10).map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }));
-        const reply = await mutations.assistant(msgs, pid);
+        const section = routePid ? (loc.pathname.split('/')[3] ?? '') : '';
+        const sel = pid ? loadSelection(pid) : {};
+        const page = {
+          path: loc.pathname,
+          name: routePid ? (PAGE_NAMES[section] ?? section) : loc.pathname === '/projects' ? 'Projects' : PAGE_NAMES[loc.pathname.slice(1)] ?? loc.pathname,
+          audience_version_id: sel.audienceId,
+          area_id: sel.areaId,
+          run_id: sel.runId,
+        };
+        const reply = await mutations.assistant(msgs, pid, page);
         setTurns((cur) => [...cur, { role: 'assistant', content: reply.answer, reply }]);
       } catch (e) {
         const err = e as ApiError;
@@ -163,7 +198,7 @@ export function Assistant() {
         setBusy(false);
       }
     },
-    [busy, turns, pid],
+    [busy, turns, pid, routePid, loc.pathname],
   );
 
   const retry = () => {
@@ -175,7 +210,7 @@ export function Assistant() {
 
   const excluded = project?.country_code === 'IN' ? 'Chennai' : 'Houston';
   const chips = pid
-    ? [`Why is ${excluded} excluded?`, 'What did Qloo change in this project?', 'Which audience should I lead with?', 'What should my pilot measure?']
+    ? ['What is this product and who is it for?', 'What claims can I use in ads?', `Why is ${excluded} excluded?`, 'Which audience should I lead with?']
     : ['What can LaunchLens do?', 'Which brands do Bad Bunny fans like?', 'Where in New York would Taylor Swift fans hang out?', 'How do I start a new launch plan?'];
 
   if (guide.active) return null;
@@ -236,6 +271,13 @@ export function Assistant() {
               canReset={turns.length > 0}
             />
             <div ref={scroller} className="scroll-thin flex-1 space-y-4 overflow-y-auto px-4 py-4" aria-live="polite" data-testid="assistant-messages">
+              {project && (
+                <p className="flex items-center gap-1.5 rounded-xl border border-line bg-surface2/60 px-3 py-1.5 text-[12px] text-muted" data-testid="assistant-context">
+                  <span className="font-medium text-fg">Talking about:</span>
+                  <span className="truncate">{project.product?.name ?? project.name}</span>
+                  {!routePid && <span className="shrink-0 text-subtle">· last opened</span>}
+                </p>
+              )}
               {turns.length === 0 && <Empty chips={chips} onAsk={(q) => send(q)} inProject={!!pid} />}
               {turns.map((t, i) =>
                 t.role === 'user' ? (

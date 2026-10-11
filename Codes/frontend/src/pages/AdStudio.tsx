@@ -32,6 +32,7 @@ import { InteractiveMedia } from '../components/InteractiveMedia';
 import { EvidenceBadge, EvidenceChip } from '../components/Evidence';
 import { JobCard } from '../components/JobCard';
 import { PilotCard, WhyThisMessage } from '../components/CreativeTrace';
+import { StrategyNextStep } from '../components/StrategyNextStep';
 import { Editable, LockNote, useLocked } from '../components/Locked';
 import { Modal } from '../components/Overlay';
 import { useProjectCtx } from '../components/ProjectContext';
@@ -1084,6 +1085,14 @@ function DuplicateModal({ b, open, onClose }: { b: BriefDetail; open: boolean; o
   const toast = useToast();
   const [sid, setSid] = useState('');
   const [lang, setLang] = useState<string>(b.language);
+  useEffect(() => {
+    if (!open || sid) return;
+    const pick =
+      strategies.find((s) => s.area_id === b.area_id && s.audience_version_id !== b.audience_version_id) ??
+      strategies.find((s) => s.audience_version_id !== b.audience_version_id) ??
+      strategies[0];
+    if (pick) setSid(pick.id);
+  }, [open, sid, strategies, b.area_id, b.audience_version_id]);
   const [angle, setAngle] = useState('');
   const angles = angleOptions(useProduct(pid).data?.current?.features);
   const dup = useApiMutation(() => mutations.duplicateBrief(b.id, { strategy_version_id: sid, language: lang as 'en', angle: angle || null }), [['briefs', pid], ['jobs', pid]]);
@@ -1149,9 +1158,23 @@ function DuplicateModal({ b, open, onClose }: { b: BriefDetail; open: boolean; o
 
 function NewBriefModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { pid } = useProjectCtx();
-  const strategies = useStrategies(pid).data?.items ?? [];
+  const stratQ = useStrategies(pid);
+  const strategies = stratQ.data?.items ?? [];
+  const usable = strategies.some((s) => !s.stale);
+  const { sel } = useProjectCtx();
   const toast = useToast();
   const [sid, setSid] = useState('');
+  // a required choice gets a sensible default: the strategy for the working city × audience, else the first usable one
+  useEffect(() => {
+    if (!open || sid) return;
+    const ok = strategies.filter((s) => !s.stale);
+    const pick =
+      ok.find((s) => s.area_id === sel.areaId && s.audience_version_id === sel.audienceId) ??
+      ok.find((s) => s.area_id === sel.areaId) ??
+      ok.find((s) => s.content.selected?.audience_role === 'product_user') ??
+      ok[0];
+    if (pick) setSid(pick.id);
+  }, [open, sid, strategies, sel.areaId, sel.audienceId]);
   const [lang, setLang] = useState('en');
   const [channel, setChannel] = useState('social');
   const [angle, setAngle] = useState('');
@@ -1179,9 +1202,10 @@ function NewBriefModal({ open, onClose }: { open: boolean; onClose: () => void }
       }
     >
       <div className="space-y-4">
+        {stratQ.isSuccess && !usable && <StrategyNextStep compact onNavigate={onClose} />}
         <Field label="Strategy" required hint="Stale strategies cannot receive new creative.">
           <Select value={sid} onChange={(e) => setSid(e.target.value)}>
-            <option value="">Choose…</option>
+            <option value="">{stratQ.isSuccess && !usable ? 'No strategy yet — see above' : 'Choose…'}</option>
             {strategies.map((s) => (
               <option key={s.id} value={s.id} disabled={s.stale}>
                 {s.content.selected.area_name} × {s.content.selected.audience_name} (v{s.version}){s.stale ? ' — stale' : ''}

@@ -30,6 +30,7 @@ import { ConfirmDialog } from '../components/Overlay';
 import { useProjectCtx } from '../components/ProjectContext';
 import { Editable, LockNote, useLocked } from '../components/Locked';
 import { useToast } from '../components/Toast';
+import { StrategyNextStep } from '../components/StrategyNextStep';
 import { Badge, Button, Callout, Card, CardHeader, EmptyState, ErrorState, PageHeader, Select, SkeletonCard, Table, Tabs, Td, Th, Textarea, Tooltip } from '../components/ui';
 import { cn, fmtDate, fmtMoney, humanize } from '../lib/format';
 import { PLACEMENT_STATUS, ROLE_LABEL } from '../lib/labels';
@@ -65,9 +66,7 @@ export default function CampaignStrategy() {
       {q.isLoading && <SkeletonCard lines={10} />}
       {q.error && <ErrorState error={q.error} onRetry={() => q.refetch()} />}
       {q.data && groups.length === 0 && (
-        <EmptyState icon={<Target className="h-5 w-5" />} title="No strategies yet">
-          Strategies are written after you choose location × audience pairs at the “select targets” decision of a research run.
-        </EmptyState>
+        <StrategyNextStep />
       )}
       {groups.length > 0 && (
         <>

@@ -13,7 +13,6 @@ import {
   Package,
   Play,
   Scale,
-  Sparkles,
   Store,
   Target,
   Users,
@@ -27,7 +26,6 @@ import { researchPrereqs } from '../hooks/useJourney';
 import { useFirstVisit } from '../hooks/useTheme';
 import { ConsultPanel } from '../components/ConsultPanel';
 import { OpportunitiesCard } from '../components/Opportunities';
-import { QlooImpactCard } from '../components/QlooImpact';
 import { useProjectCtx } from '../components/ProjectContext';
 import { StageTimeline } from '../components/StageTimeline';
 import { useToast } from '../components/Toast';
@@ -86,11 +84,6 @@ export default function Overview() {
         description={project.goal}
         actions={
           <>
-            <ActionPreview tipKey="qloo-changed">
-              <Link to={`/projects/${pid}/compare?view=impact`} className="inline-flex h-10 items-center gap-2 rounded-xl border border-line bg-surface px-4 text-sm font-medium transition hover:border-fg/30 hover:bg-surface2 [@media(pointer:coarse)]:min-h-[44px]">
-                <Sparkles className="h-4 w-4 text-violet-600" /> See what Qloo changed
-              </Link>
-            </ActionPreview>
             <ActionPreview
               tipKey="start-research"
               title="Start research"
@@ -146,7 +139,7 @@ export default function Overview() {
             title={latest && newest && latest.id !== newest.id ? 'Research run' : 'Latest research run'}
             subtitle={
               latest
-                ? `Run ${shortId(latest.id)} · started ${timeAgo(latest.created_at)}${latest.qloo_enabled ? '' : ' · without Qloo (experiment)'}${newest && newest.id !== latest.id ? ` · newer run ${shortId(newest.id)}: ${newest.qloo_enabled ? '' : 'practical baseline, '}${newest.status.replace(/_/g, ' ')}` : ''}`
+                ? `Run ${shortId(latest.id)} · started ${timeAgo(latest.created_at)}${newest && newest.id !== latest.id ? ` · newer run ${shortId(newest.id)}: ${newest.status.replace(/_/g, ' ')}` : ''}`
                 : 'No run yet'
             }
             action={
@@ -223,7 +216,6 @@ export default function Overview() {
             </Card>
           )}
 
-          <QlooImpactCard />
           <OpportunitiesCard runId={best?.qloo_enabled ? best.id : undefined} />
           <QuickNav pid={pid} />
         </div>

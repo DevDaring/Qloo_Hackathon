@@ -231,7 +231,7 @@ function Explorer() {
             >
               {(runs.data?.items ?? []).map((r) => (
                 <option key={r.id} value={r.id}>
-                  Run {shortId(r.id)} · {r.status.replace(/_/g, ' ')} · {r.counts?.places ?? 0} places{r.qloo_enabled ? '' : ' · no Qloo'} · {timeAgo(r.created_at)}
+                  Run {shortId(r.id)} · {r.status.replace(/_/g, ' ')} · {r.counts?.places ?? 0} places · {timeAgo(r.created_at)}
                 </option>
               ))}
               {!runs.data?.items.length && <option value="">No runs yet</option>}
@@ -931,7 +931,7 @@ function SaveAreaModal({
 }) {
   const { pid } = useProjectCtx();
   const toast = useToast();
-  const [name, setName] = useState('');
+  const [name, setName] = useState(`Saved area · ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`);
   const [radius, setRadius] = useState('3');
   const [lat, setLat] = useState('');
   const [lon, setLon] = useState('');

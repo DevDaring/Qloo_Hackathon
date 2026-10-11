@@ -2,9 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { ArrowRight, CheckCircle2, CircleHelp, Eye, GitCompareArrows, History, Info, OctagonX, RotateCcw, Scale, Sparkles, XCircle } from 'lucide-react';
+import { ArrowRight, CheckCircle2, CircleHelp, Eye, GitCompareArrows, History, Info, OctagonX, RotateCcw, Scale, XCircle } from 'lucide-react';
 import { mutations, pickDefaultRun, useAudiences, useRevisions, useRun, useRunDiff, useRuns, type RevisionBody } from '../api/hooks';
-import { QlooImpact } from '../components/QlooImpact';
 import { RevisionPreviewSheet } from '../components/RevisionPreview';
 import type { Assessment, Component } from '../api/types';
 import { PageWrap } from '../components/AppShell';
@@ -28,7 +27,6 @@ import {
   SkeletonCard,
   StatusPill,
   Table,
-  Tabs,
   Td,
   Th,
   Tooltip,
@@ -50,7 +48,6 @@ export default function LocationComparison() {
   const [params, setParams] = useSearchParams();
   const runs = useRuns(pid);
   const runId = pickDefaultRun(runs.data?.items, params.get('run') ?? sel.runId)?.id;
-  const view: 'locations' | 'impact' = params.get('view') === 'impact' || (typeof window !== 'undefined' && window.location.hash === '#qloo-impact') ? 'impact' : 'locations';
   const rd = useRun(runId);
   const all = rd.data?.assessments ?? [];
   const [areaIds, setAreaIds] = useState<string[]>([]);
@@ -88,7 +85,7 @@ export default function LocationComparison() {
               {(runs.data?.items ?? []).map((r) => (
                 <option key={r.id} value={r.id}>
                   Run {shortId(r.id)} · {r.status.replace(/_/g, ' ')}
-                  {r.qloo_enabled ? '' : ' · without Qloo'} · {timeAgo(r.created_at)}
+                  {' · '}{timeAgo(r.created_at)}
                 </option>
               ))}
             </Select>
@@ -96,25 +93,6 @@ export default function LocationComparison() {
         }
       />
 
-      <div className="scroll-thin -mx-1 mb-6 overflow-x-auto px-1">
-      <Tabs<'locations' | 'impact'>
-        value={view}
-        onChange={(v) => {
-          const next = new URLSearchParams(params);
-          if (v === 'impact') next.set('view', 'impact');
-          else next.delete('view');
-          setParams(next, { replace: true });
-        }}
-        tabs={[
-          { key: 'locations', label: 'Compare locations', icon: <Scale className="h-3.5 w-3.5" /> },
-          { key: 'impact', label: 'See what Qloo changed', icon: <Sparkles className="h-3.5 w-3.5" />, tip: 'qloo-changed' },
-        ]}
-      />
-      </div>
-      {view === 'impact' ? (
-        <QlooImpact runId={runId} qlooRun={rd.data?.run.qloo_enabled} />
-      ) : (
-      <>
       <Callout tone="accent" icon={<Info className="h-4 w-4 text-accent-ink" />} title="Planning index, not a forecast; coverage is completeness, not confidence." className="mb-6">
         Indices are rank-based (0–1) application planning indices over the weight that has evidence. An incomplete index shows its available weight and is not directly comparable with a complete one.
       </Callout>
@@ -167,8 +145,6 @@ export default function LocationComparison() {
         <DiffPanel runId={runId} />
       </div>
       <RevisionPanel candidates={all.map((a) => a.area_name)} />
-      </>
-      )}
     </PageWrap>
   );
 }

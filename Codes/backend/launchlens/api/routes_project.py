@@ -87,7 +87,8 @@ async def list_projects(include_archived: bool = False, p: Principal = Depends(c
         q = q.where(Project.archived.is_(False))
     out = []
     for proj in (await s.execute(q)).scalars().all():
-        last_run = (await s.execute(select(ResearchRun).where(ResearchRun.project_id == proj.id)
+        last_run = (await s.execute(select(ResearchRun).where(ResearchRun.project_id == proj.id,
+                                                              ResearchRun.experiment_label == "")
                                     .order_by(ResearchRun.created_at.desc()).limit(1))).scalar_one_or_none()
         recent = (await s.execute(select(Asset).where(Asset.project_id == proj.id, Asset.kind.in_(("flyer", "video_final")),
                                                       Asset.deleted_at.is_(None)).order_by(Asset.created_at.desc()).limit(4))).scalars().all()
@@ -121,9 +122,9 @@ async def get_project(project_id: uuid.UUID, p: Principal = Depends(current_prin
     proj = await check_project(s, p, project_id)
     ctx = await ctxsvc.load(project_id)
     counts = await assetsvc.count_for_project(project_id)
-    runs = (await s.execute(select(ResearchRun).where(ResearchRun.project_id == project_id)
-                            .order_by((ResearchRun.experiment_label != "").asc(), ResearchRun.created_at.desc())
-                            .limit(10))).scalars().all()
+    runs = (await s.execute(select(ResearchRun).where(ResearchRun.project_id == project_id,
+                                                      ResearchRun.experiment_label == "", ResearchRun.qloo_enabled.is_(True))
+                            .order_by(ResearchRun.created_at.desc()).limit(10))).scalars().all()
     n_briefs = (await s.execute(select(func.count()).select_from(CreativeBrief).where(
         CreativeBrief.project_id == project_id, CreativeBrief.is_current.is_(True)))).scalar_one()
     active_jobs = (await s.execute(select(func.count()).select_from(Job).where(

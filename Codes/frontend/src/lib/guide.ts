@@ -77,14 +77,6 @@ export const GUIDE_STEPS: GuideStep[] = [
     body: 'Cities that fail a hard rule — like Houston, outside the launch partner’s service area — are excluded before any scoring. Eligible cities then get transparent component scores, including Qloo’s city taste lift.',
   },
   {
-    id: 'impact',
-    path: (p) => `${base(p)}/compare?view=impact`,
-    target: 'impact',
-    title: 'See what Qloo changed',
-    body: 'The same research run with and without Qloo, with everything else held constant. It shows plainly whether the city order, the venues found and the messaging changed.',
-    isNew: true,
-  },
-  {
     id: 'strategy',
     path: (p) => `${base(p)}/strategy`,
     target: 'strategy',

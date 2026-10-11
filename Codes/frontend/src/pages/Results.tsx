@@ -26,7 +26,7 @@ const blank = (currency: string): Row => ({
   purchases: null,
   spend: null,
   currency,
-  measurement_source: '',
+  measurement_source: 'Manual entry (owner-reported)',
   notes: '',
 });
 const NUMS = ['impressions', 'clicks', 'inquiries', 'leads', 'purchases', 'spend'] as const;

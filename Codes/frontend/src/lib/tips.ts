@@ -58,12 +58,6 @@ export const TIPS: Record<string, TipEntry> = {
     body: 'Shades the map by relative taste affinity for the selected audience. It is a relative signal, not demand or foot traffic.',
     click: 'Loads the heatmap for the city on screen.',
   },
-  'qloo-changed': {
-    title: 'See what Qloo changed',
-    body: 'Compare this research snapshot with a practical baseline — the same run without Qloo taste signals — to see exactly what Qloo added: city order, venues found, ranking and messaging.',
-    isNew: true,
-    click: 'Opens the side-by-side comparison. Nothing is re-run.',
-  },
   'why-places': {
     title: 'Why these places?',
     body: 'Follows one audience in one city: their interests, the places Qloo recommends, the placement chosen, the campaign hypothesis and the ad it led to.',
@@ -103,20 +97,6 @@ export const TIPS: Record<string, TipEntry> = {
     title: 'Underexplored opportunities',
     body: 'Venues with strong taste relevance that aren’t shortlisted yet. Affinity and popularity are shown separately; neither measures competition or whether a venue will partner.',
     isNew: true,
-  },
-
-  /* ------------------------------------------------ experiment validity */
-  'validity-valid': {
-    title: 'Valid comparison',
-    body: 'Both runs used identical practical evidence (places, climate) copied from the same snapshot, so differences come from Qloo signals alone.',
-  },
-  'validity-invalid': {
-    title: 'Not a clean comparison',
-    body: 'Something other than Qloo differs between the two runs — the list explains what. Read the differences with care.',
-  },
-  'order-unchanged': {
-    title: 'City order',
-    body: 'Whether the ranking of eligible cities moved once taste signals were added. Hard constraints (like service coverage) are applied first in both runs.',
   },
 
   /* ------------------------------------------------ revisions */

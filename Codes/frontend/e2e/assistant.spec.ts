@@ -40,7 +40,7 @@ async function signIn(page: Page) {
 }
 
 test('assistant: launcher, chips, Qloo card, links, Escape', async ({ page }) => {
-  const bodies: { messages: { role: string; content: string }[]; project_id?: string }[] = [];
+  const bodies: { messages: { role: string; content: string }[]; project_id?: string; page?: { name: string; path: string } }[] = [];
   await page.route('**/api/v1/assistant/chat', async (route) => {
     bodies.push(route.request().postDataJSON());
     await new Promise((r) => setTimeout(r, 400));
@@ -88,6 +88,9 @@ test('assistant: launcher, chips, Qloo card, links, Escape', async ({ page }) =>
   await expect(page.getByTestId('assistant-user-msg').last()).toHaveText('What should my pilot measure?');
   await expect.poll(() => bodies.length).toBe(2);
   expect(bodies[1].project_id).toBe(pid);
+  // the page on screen goes along, and the panel says which product "this product" means
+  expect(bodies[1].page?.name).toBe('Overview');
+  await expect(page.getByTestId('assistant-context')).toContainText('Talking about:');
 
   // Escape closes it and focus returns to the launcher
   await page.getByLabel('Your question').focus();

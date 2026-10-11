@@ -39,7 +39,6 @@ The key claim LaunchLens demonstrates is **"Qloo changes a decision for a tracea
 | Venue and partner shortlist | Qloo place-category tags (pharmacies, hospitals, malls, community and senior centres, physiotherapists, mobility and medical suppliers) are ranked by affinity per audience. Suitability = category fit + proximity + rank-normalised Qloo affinity. |
 | Taste layer | A Qloo heatmap (`urn:heatmap`) on the map, labelled *relative within this query only — not demand*. |
 | "Why this place?" | A taste-to-campaign story per audience and city: interests → Qloo recommendations → shortlisted place → campaign hypothesis → creative. Where Qloo explainability attributes a recommendation to an input, that edge is drawn with its evidence; otherwise the place is shown as "recommended for this combined interest set", with no invented weights. Model-written hypotheses are labelled as generated. |
-| Experiment ("See what Qloo changed") | The with/without-Qloo comparison starts from the baseline run's frozen inputs and copies its practical evidence, then verifies per-city fingerprints. Edits after the baseline cannot leak in, and an invalid comparison says so. It reports ranking changes, venue discovery and creative emphasis separately, with blind A/B ratings, and says plainly when there is no material change. |
 
 Qloo affinity is always presented with its provider meaning. It is a relative taste relationship, never demand,
 footfall, purchase probability or a disability signal. Raw Qloo responses stay server-side and are never exported.
@@ -57,7 +56,7 @@ footfall, purchase probability or a disability signal. Raw Qloo responses stay s
   evidence drawer, a comparison tray, saved areas, a table fallback, and charts computed from the same bounded
   dataset.
 - **Location comparison:** hard-constraint chips, component contributions, practical rank versus planning index,
-  explicit "incomplete" states, a revision diff, and the with/without-Qloo experiment.
+  explicit "incomplete" states, and a revision diff.
 - **Campaign strategy:** for each location × audience, positioning, two feature-emphasis hypotheses, key messages
   with evidence references, a placement shortlist (every placement stays *availability unknown* until verified),
   pilot plan, KPIs-to-test and a deterministic budget scenario.
@@ -206,8 +205,6 @@ The offline tests cover the core guarantees:
 - Tenant isolation, and no secrets in responses or exports.
 - Concurrent cost caps.
 - Crash recovery without paying twice.
-- Experiments: baseline from another project or without taste evidence is refused; edits after the baseline do
-  not change the experiment; swapped city evidence is detected; blind ratings stay blind until both are rated.
 - Taste story: per-input Qloo attribution only when Qloo provides it, otherwise the combined-set fallback; every
   provider edge resolves to project evidence.
 - The locked sample refuses edits but allows export and duplication.
@@ -216,7 +213,6 @@ The offline tests cover the core guarantees:
 - Export manifest integrity.
 - Indic glyph coverage.
 - A Qloo-enabled run that becomes complete and ranked.
-- The with/without-Qloo experiment holding practical evidence constant.
 
 Live provider checks are kept separate from offline results.
 

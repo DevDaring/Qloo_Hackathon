@@ -33,9 +33,18 @@ class _ChatMsg(BaseModel):
     content: str = Field(min_length=1, max_length=4000)
 
 
+class _PageCtx(BaseModel):
+    path: str = Field(default="", max_length=300)
+    name: str = Field(default="", max_length=80)
+    audience_version_id: uuid.UUID | None = None
+    area_id: uuid.UUID | None = None
+    run_id: uuid.UUID | None = None
+
+
 class AssistantIn(BaseModel):
     messages: list[_ChatMsg] = Field(min_length=1, max_length=20)
-    project_id: uuid.UUID | None = None
+    project_id: uuid.UUID | None = Field(default=None, description="The project on screen, or the last one opened this session")
+    page: _PageCtx | None = None
 
 
 @router.post("/assistant/chat", tags=["assistant"])
@@ -55,7 +64,8 @@ async def assistant_chat(body: AssistantIn, p: Principal = Depends(current_princ
             demos = (await s.execute(select(Project).where(Project.workspace_id == p.workspace_id, Project.is_demo.is_(True),
                                                            Project.archived.is_(False)))).scalars().all()
             sample = next((d.id for d in demos if d.country_code == "US"), demos[0].id if demos else None)
-        out = await assistant.chat([m.model_dump() for m in body.messages], body.project_id, sample_id=sample)
+        out = await assistant.chat([m.model_dump() for m in body.messages], body.project_id, sample_id=sample,
+                                   page=body.page.model_dump() if body.page else None)
     except ProviderError:
         raise AppError(503, "assistant_unavailable", "The assistant is unavailable right now. Please try again in a minute.",
                        retryable=True) from None

@@ -4799,7 +4799,18 @@
         "type": "null"
        }
       ],
-      "title": "Project Id"
+      "title": "Project Id",
+      "description": "The project on screen, or the last one opened this session"
+     },
+     "page": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/_PageCtx"
+       },
+       {
+        "type": "null"
+       }
+      ]
      }
     },
     "type": "object",
@@ -6750,6 +6761,60 @@
      "content"
     ],
     "title": "_ChatMsg"
+   },
+   "_PageCtx": {
+    "properties": {
+     "path": {
+      "type": "string",
+      "maxLength": 300,
+      "title": "Path",
+      "default": ""
+     },
+     "name": {
+      "type": "string",
+      "maxLength": 80,
+      "title": "Name",
+      "default": ""
+     },
+     "audience_version_id": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "uuid"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Audience Version Id"
+     },
+     "area_id": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "uuid"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Area Id"
+     },
+     "run_id": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "uuid"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Run Id"
+     }
+    },
+    "type": "object",
+    "title": "_PageCtx"
    }
   }
  }

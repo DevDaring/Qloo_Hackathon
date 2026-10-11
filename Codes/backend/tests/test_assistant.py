@@ -49,7 +49,7 @@ async def test_assistant_grounds_in_qloo_and_is_read_only(app, monkeypatch):
     assert r.status_code == 422
 
 
-async def test_runs_list_puts_comparison_arms_last(app):
+async def test_runs_list_hides_comparison_runs(app):
     from launchlens.db import session_scope
     from launchlens.models import ResearchRun
     from .conftest import login as _login
@@ -65,4 +65,4 @@ async def test_runs_list_puts_comparison_arms_last(app):
         s.add(ResearchRun(project_id=_u.UUID(pid), workspace_id=ws, thread_id="t-arm", status="completed",
                           qloo_enabled=False, experiment_label="without_qloo"))
     items = (await c.get(f"/api/v1/projects/{pid}/research-runs")).json()["items"]
-    assert [r["experiment_label"] for r in items] == ["", "without_qloo"]
+    assert [r["experiment_label"] for r in items] == [""] and all(r["qloo_enabled"] for r in items)

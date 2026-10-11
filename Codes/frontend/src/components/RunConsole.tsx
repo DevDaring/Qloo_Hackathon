@@ -117,7 +117,7 @@ export function RunConsole() {
                         {runs.map((r) => (
                           <option key={r.id} value={r.id}>
                             Run {shortId(r.id)} · {r.status.replace(/_/g, ' ')}
-                            {r.qloo_enabled === false ? ' · without Qloo' : ''} · {timeAgo(r.created_at)}
+                            {' · '}{timeAgo(r.created_at)}
                           </option>
                         ))}
                       </Select>
@@ -168,7 +168,6 @@ export function RunConsole() {
                               <span className="num font-semibold text-fg">{v.toLocaleString()}</span> {k}
                             </span>
                           ))}
-                          {!run.qloo_enabled && <Badge tone="violet">Experiment arm: without Qloo</Badge>}
                         </div>
                         {run.errors?.length > 0 && (
                           <ul className="space-y-1 rounded-xl border border-bad/20 bg-bad-soft/50 p-3 text-xs">

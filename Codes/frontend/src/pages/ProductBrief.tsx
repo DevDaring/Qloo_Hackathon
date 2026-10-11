@@ -116,9 +116,10 @@ const emptyFeature = (): Feature => ({
   enabled: true,
 });
 
-function toForm(p: Product | null | undefined, currency = 'INR'): ProductForm {
+function toForm(p: Product | null | undefined, currency = 'INR', projectName = ''): ProductForm {
   return {
-    name: p?.name ?? '',
+    // a new product starts with the project's name, so the required field is never blank
+    name: p?.name ?? projectName.replace(/\s*\(my copy\)\s*$/i, ''),
     description: p?.description ?? '',
     category: p?.category ?? '',
     price: p?.price != null ? String(p.price) : '',
@@ -141,13 +142,13 @@ function FactsTab() {
   const { pid, project } = useProjectCtx();
   const pq = useProduct(pid);
   const cur = pq.data?.current;
-  const [form, setForm] = useState<ProductForm>(() => toForm(cur, project?.currency));
+  const [form, setForm] = useState<ProductForm>(() => toForm(cur, project?.currency, project?.name));
   const [dirty, setDirty] = useState(false);
   const [errs, setErrs] = useState<Record<string, string>>({});
   const [extractOpen, setExtractOpen] = useState(false);
   const toast = useToast();
   useEffect(() => {
-    if (!dirty) setForm(toForm(cur, project?.currency));
+    if (!dirty) setForm(toForm(cur, project?.currency, project?.name));
   }, [cur, dirty, project?.currency]);
   const set = <K extends keyof ProductForm>(k: K, v: ProductForm[K]) => {
     setForm((f) => ({ ...f, [k]: v }));
@@ -382,7 +383,7 @@ function FactsTab() {
             Save version
           </Button>
           {dirty && (
-            <button className="mt-2 w-full text-center text-xs text-muted hover:text-fg" onClick={() => (setForm(toForm(cur, project?.currency)), setDirty(false), setErrs({}))}>
+            <button className="mt-2 w-full text-center text-xs text-muted hover:text-fg" onClick={() => (setForm(toForm(cur, project?.currency, project?.name)), setDirty(false), setErrs({}))}>
               Discard changes
             </button>
           )}

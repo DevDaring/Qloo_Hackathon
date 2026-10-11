@@ -71,16 +71,15 @@ test('project guide, hover tips and image hover', async ({ page }) => {
   await page.keyboard.press('Escape');
   await expect(guide).toHaveCount(0);
 
-  // hover tip: "See what Qloo changed" explains itself without being clicked
+  // hover tip: "Start research" explains itself (and why it is disabled) without being clicked
   const sample = page.getByTestId('sample-card').first();
   await sample.getByRole('button', { name: /^Open sample/ }).click();
   await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
   const url = page.url();
-  await page.getByRole('link', { name: /See what Qloo changed/ }).first().hover();
+  await page.getByRole('button', { name: 'Start research', exact: true }).first().hover({ force: true });
   const tip = page.getByTestId('tip-card');
   await expect(tip).toBeVisible();
-  await expect(tip).toContainText('See what Qloo changed');
-  await expect(tip).toContainText('If you click');
+  await expect(tip).toContainText('Start research');
   expect(page.url()).toBe(url); // hovering never navigates
   await page.mouse.move(5, 5);
   await expect(tip).toHaveCount(0);

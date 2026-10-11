@@ -208,7 +208,7 @@ function ProjectCard({ p }: { p: ProjectListItem }) {
 }
 
 function CreateProject({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [name, setName] = useState('');
+  const [name, setName] = useState(() => `New launch plan · ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`);
   const [goal, setGoal] = useState('');
   const [country, setCountry] = useState('IN');
   const [currency, setCurrency] = useState('INR');
@@ -286,7 +286,7 @@ function JuryTour({ samples }: { samples: { id: string; country_code: string; na
   const steps = [
     { to: `/projects/${pid}`, icon: Sparkles, t: 'Overview', d: 'Run timeline & decisions' },
     { to: `/projects/${pid}/audiences#taste-story`, icon: Network, t: 'Why these places?', d: 'Interests → Qloo → placement → ad' },
-    { to: `/projects/${pid}/compare?view=impact`, icon: FlaskConical, t: 'What Qloo changed', d: 'Baseline vs taste-informed' },
+    { to: `/projects/${pid}/compare`, icon: FlaskConical, t: 'Where to launch', d: 'Hard constraints, then Qloo taste lift' },
     { to: `/projects/${pid}/explorer`, icon: MapIcon, t: 'Market explorer', d: 'Map, places, evidence' },
     { to: `/projects/${pid}/studio`, icon: WandSparkles, t: 'Why this message?', d: 'Copy traced to evidence' },
     { to: `/projects/${pid}/settings`, icon: Gauge, t: 'Status', d: 'Honest provider state' },

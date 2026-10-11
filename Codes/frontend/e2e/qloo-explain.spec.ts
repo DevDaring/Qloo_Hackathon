@@ -13,7 +13,7 @@ test.beforeEach(async ({ page }) => {
 
 /**
  * The demo journey on the seeded, read-only sample: locked banner → taste story
- * (provider evidence, generated hypotheses) → "See what Qloo changed" → "Why this
+ * (provider evidence, generated hypotheses) → location comparison → "Why this
  * message?" → duplicate to an editable copy. Nothing here generates media or
  * spends money; the only write is the duplicate, which is archived afterwards.
  */
@@ -73,16 +73,11 @@ test('Qloo explanation journey on the locked sample', async ({ page }) => {
   await expect(page.getByTestId('combined-bracket')).toBeAttached();
   await expect(page.getByTestId('combined-edge')).toContainText('recommended for this combined interest set');
 
-  // "See what Qloo changed" from the overview
-  await page.goto(projectUrl);
-  await page.getByRole('link', { name: /See what Qloo changed/ }).first().click();
-  await expect(page).toHaveURL(/compare\?view=impact/);
-  const verdict = page.getByTestId('impact-verdict');
-  await expect(verdict).toBeVisible();
-  await expect(verdict).toContainText(/City order (un)?changed|No material change/);
-  await expect(page.getByTestId('held-constant')).toContainText('Varied');
-  await expect(page.getByTestId('impact-discovery')).toBeVisible();
-  await expect(page.getByTestId('impact-dates')).toContainText('run');
+  // Location comparison: hard constraints first, then Qloo cultural fit
+  await page.goto(`${projectUrl}/compare`);
+  await expect(page.getByTestId('location-Chennai')).toContainText(/Excluded|excluded/);
+  await expect(page.getByText('Cultural fit (Qloo)').first()).toBeVisible();
+  await expect(page.getByText('See what Qloo changed')).toHaveCount(0); // the without-Qloo comparison is not part of the product
 
   // Ad studio: "Why this message?" and the pilot hypothesis card
   await page.goto(`${projectUrl}/studio`);

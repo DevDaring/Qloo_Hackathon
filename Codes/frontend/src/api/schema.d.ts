@@ -1433,8 +1433,12 @@ export interface components {
         AssistantIn: {
             /** Messages */
             messages: components["schemas"]["_ChatMsg"][];
-            /** Project Id */
+            /**
+             * Project Id
+             * @description The project on screen, or the last one opened this session
+             */
             project_id?: string | null;
+            page?: components["schemas"]["_PageCtx"] | null;
         };
         /** AudienceIn */
         AudienceIn: {
@@ -2116,6 +2120,25 @@ export interface components {
             role: "user" | "assistant";
             /** Content */
             content: string;
+        };
+        /** _PageCtx */
+        _PageCtx: {
+            /**
+             * Path
+             * @default
+             */
+            path: string;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /** Audience Version Id */
+            audience_version_id?: string | null;
+            /** Area Id */
+            area_id?: string | null;
+            /** Run Id */
+            run_id?: string | null;
         };
     };
     responses: never;

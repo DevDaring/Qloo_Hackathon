@@ -16,7 +16,7 @@ test.beforeEach(async ({ page }) => {
  * venues, English and Spanish creative, and a valid with/without-Qloo comparison.
  * Read-only: nothing is written or generated.
  */
-test('US speaker sample: ranking, taste story, Spanish creative and Qloo impact', async ({ page }) => {
+test('US speaker sample: ranking, taste story and Spanish creative', async ({ page }) => {
   const writes: string[] = [];
   page.on('request', (r) => {
     if (!['GET', 'HEAD'].includes(r.method()) && !/auth\/login|locations\/compare|revisions\/preview/.test(r.url())) writes.push(`${r.method()} ${r.url()}`);
@@ -48,10 +48,9 @@ test('US speaker sample: ranking, taste story, Spanish creative and Qloo impact'
   await page.goto(`${projectUrl}/studio`);
   await expect(page.getByText(/Español|Spanish/).first()).toBeVisible();
 
-  // Qloo impact: valid comparison with venue discovery
-  await page.goto(`${projectUrl}/compare?view=impact`);
-  await expect(page.getByTestId('impact-verdict')).toContainText(/City order (un)?changed|No material change/);
-  await expect(page.getByTestId('impact-discovery')).toBeVisible();
+  // Qloo cultural fit drives the eligible cities' comparison
+  await page.goto(`${projectUrl}/compare`);
+  await expect(page.getByText('Cultural fit (Qloo)').first()).toBeVisible();
 
   expect(writes).toEqual([]);
 });

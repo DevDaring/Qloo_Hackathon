@@ -253,19 +253,6 @@ export const useProviders = (refresh = false) =>
 export const useUsage = (pid?: string) =>
   useQuery({ queryKey: ['usage', pid ?? 'all'], queryFn: () => get<T.Usage>('/usage', { project_id: pid }) });
 
-export const useExperiments = (pid?: string) =>
-  useQuery({
-    queryKey: ['experiments', pid],
-    queryFn: () =>
-      get<{ items: { id: string; run_with_qloo_id: string; run_without_qloo_id: string; created_at: string }[] }>(
-        `/projects/${pid}/experiments`,
-      ),
-    enabled: !!pid,
-  });
-
-export const useExperiment = (eid?: string | null) =>
-  useQuery({ queryKey: ['experiment', eid], queryFn: () => get<T.ExperimentAnalysis>(`/experiments/${eid}`), enabled: !!eid });
-
 export const useRevisions = (pid?: string) =>
   useQuery({ queryKey: ['revisions', pid], queryFn: () => get<{ items: T.Revision[] }>(`/projects/${pid}/revisions`), enabled: !!pid });
 
@@ -396,12 +383,13 @@ export const mutations = {
     fd.set('file', file);
     return api<{ imported: number }>(`/projects/${pid}/results/csv`, { method: 'POST', form: fd });
   },
-  createExperiment: (pid: string, runId: string) =>
-    post<{ experiment_id: string; run: T.Run; job: T.Job }>(`/projects/${pid}/experiments`, { run_id: runId }),
-  rateExperiment: (eid: string, ratings: Record<string, number>) => patch<{ owner_ratings: Record<string, number> }>(`/experiments/${eid}/ratings`, { ratings }),
   applyRevision: (pid: string, b: Partial<Schemas['RevisionApplyIn']> & { kind: Schemas['RevisionApplyIn']['kind'] }) =>
     post<{ revision: unknown; run?: T.Run; job?: T.Job }>(`/projects/${pid}/revisions/apply`, b),
   consult: (pid: string, message: string, runId?: string) => post<T.ConsultAnswer>(`/projects/${pid}/consult`, { message, run_id: runId }),
-  assistant: (messages: T.AssistantMessage[], projectId?: string) => post<T.AssistantReply>('/assistant/chat', { messages, project_id: projectId }),
+  assistant: (
+    messages: T.AssistantMessage[],
+    projectId?: string,
+    page?: { path: string; name: string; audience_version_id?: string; area_id?: string; run_id?: string },
+  ) => post<T.AssistantReply>('/assistant/chat', { messages, project_id: projectId, page }),
   duplicateProject: (pid: string) => post<T.Project & { copied_from: string; next: string }>(`/projects/${pid}/duplicate`),
 };
