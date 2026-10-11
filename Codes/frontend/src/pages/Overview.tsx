@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { mutations, pickDefaultRun, useApiMutation, useRun, useRuns } from '../api/hooks';
 import { PageWrap } from '../components/AppShell';
+import { ResearchProgress } from '../components/ResearchProgress';
 import { ActionPreview } from '../components/ActionPreview';
 import { InteractiveMedia } from '../components/InteractiveMedia';
 import { researchPrereqs } from '../hooks/useJourney';
@@ -98,6 +99,7 @@ export default function Overview() {
             >
               <Button
                 variant="outline"
+                data-testid="start-research"
                 icon={<Play className="h-4 w-4" />}
                 disabled={prereqs.length > 0}
                 loading={start.isPending}
@@ -117,6 +119,7 @@ export default function Overview() {
           </>
         }
       />
+      <ResearchProgress />
 
       <motion.div variants={stagger(0.06)} initial={firstVisit ? 'hidden' : false} animate="show" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <motion.div variants={fadeUp}>

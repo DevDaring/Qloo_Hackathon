@@ -6,6 +6,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { ApiError } from './api/client';
 import { App } from './App';
 import { WaveBackground } from './components/WaveBackground';
+import { UpdateWatcher } from './components/UpdateWatcher';
 import { ToastProvider } from './components/Toast';
 import { TipLayer } from './components/Tips';
 import './styles/index.css';
@@ -31,6 +32,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <ToastProvider>
           <BrowserRouter>
             <WaveBackground />
+            <UpdateWatcher />
             <App />
             <TipLayer />
           </BrowserRouter>

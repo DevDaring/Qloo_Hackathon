@@ -32,6 +32,7 @@ import { InteractiveMedia } from '../components/InteractiveMedia';
 import { EvidenceBadge, EvidenceChip } from '../components/Evidence';
 import { JobCard } from '../components/JobCard';
 import { PilotCard, WhyThisMessage } from '../components/CreativeTrace';
+import { GenerationProgress, rememberJobPlan } from '../components/GenerationProgress';
 import { StrategyNextStep } from '../components/StrategyNextStep';
 import { Editable, LockNote, useLocked } from '../components/Locked';
 import { Modal } from '../components/Overlay';
@@ -252,6 +253,7 @@ function BriefWorkspace({ bid, onSwitch }: { bid: string; onSwitch: (id: string)
         {b.strategy.stale && <p className="mt-2 text-xs text-warn">The strategy behind this brief is stale.</p>}
       </Card>
 
+      <GenerationProgress b={b} />
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]" data-tour="studio">
         {/* canvas */}
         <div className="space-y-4">
@@ -880,6 +882,7 @@ function ImagesDialog({ b, state, onClose, onQueued }: { b: BriefDetail; state: 
             onClick={() =>
               gen.mutate(undefined, {
                 onSuccess: (r) => {
+                  rememberJobPlan(r.job.id, { kind: 'images', presets });
                   toast.success(r.created ? 'Image job queued' : 'Same job already exists', `Server estimate at queue time: ${usd(r.estimate.usd)}. ${r.estimate.note}`);
                   onClose();
                   onQueued();
@@ -982,6 +985,7 @@ function VideoDialog({ b, open, onClose, onQueued }: { b: BriefDetail; open: boo
             onClick={() =>
               gen.mutate(undefined, {
                 onSuccess: (r) => {
+                  rememberJobPlan(r.job.id, { kind: 'video', orientations: orients });
                   toast.success(r.created ? 'Video job queued' : 'Same job already exists', `Server estimate at queue time: ${usd(r.estimate.usd)} for ${r.estimate.generated_seconds ?? 0}s generated.`);
                   onClose();
                   onQueued();

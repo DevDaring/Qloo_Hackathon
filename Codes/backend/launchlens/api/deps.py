@@ -127,7 +127,19 @@ class RateLimiter:
             raise AppError(429, "rate_limited", "Too many requests; please wait a moment.", retryable=True)
         q.append(now)
 
+    def blocked(self, key: str) -> bool:
+        """True when the key is over its limit, without counting this call."""
+        now = time.monotonic()
+        q = self.hits[key]
+        while q and now - q[0] > self.window:
+            q.popleft()
+        return len(q) >= self.limit
 
+    def record(self, key: str) -> None:
+        self.hits[key].append(time.monotonic())
+
+
+# brute-force protection counts FAILED sign-ins only: many judges behind one office network can all sign in
 login_limiter = RateLimiter(10, 300)
 costly_limiter = RateLimiter(30, 600)
 consult_limiter = RateLimiter(20, 300)
@@ -168,7 +180,10 @@ def asset_out(a: Asset) -> dict:
 
 def job_out(j: Job) -> dict:
     return {"id": str(j.id), "kind": j.kind, "status": j.status, "attempts": j.attempts, "max_attempts": j.max_attempts,
-            "progress": j.progress, "result": j.result, "error": j.error, "project_id": str(j.project_id) if j.project_id else None,
+            "progress": j.progress, "result": j.result, "error": j.error,
+            # what was asked for, so progress views can list every format/scene from the start
+            "request": {k: (j.payload or {}).get(k) for k in ("brief_id", "presets", "orientations", "mode", "only_scene")
+                        if (j.payload or {}).get(k) is not None}, "project_id": str(j.project_id) if j.project_id else None,
             "run_id": str(j.run_id) if j.run_id else None, "cost_cap_usd": num(j.cost_cap_usd),
             "created_at": j.created_at.isoformat(), "updated_at": j.updated_at.isoformat(),
             "finished_at": j.finished_at.isoformat() if j.finished_at else None,

@@ -30,7 +30,7 @@ from ..models import Export, LocationAssessment, ResearchRun
 from ..providers import qloo
 from ..services import context as ctxsvc
 from ..services import profiles
-from ..services import creative, events, exporter, production, research, strategy
+from ..services import creative, events, exporter, jobs, production, research, strategy
 
 log = logging.getLogger("launchlens.graph")
 
@@ -179,12 +179,15 @@ async def taste_analyst(state: LaunchState, config) -> dict:
     budget = qloo.CallBudget()
     areas = [a for a in state["areas"] if not a.get("error")]
     entities = ctx.get("entities") or []
-    common = await research.common_taste(run_id, pid, areas, ctx["audiences"], entities, budget,
-                                         state.get("qloo_enabled", True))
+    # the cross-city comparison and every city's venue ranking run together; the Qloo client caps concurrency
+    import asyncio
+    common_task = asyncio.ensure_future(research.common_taste(run_id, pid, areas, ctx["audiences"], entities, budget,
+                                                              state.get("qloo_enabled", True)))
     results = await research.run_parallel(
         areas, lambda a: research.taste_analysis(run_id, pid, a, ctx["audiences"], budget, state.get("qloo_enabled", True),
                                                  entities=entities, profile=profiles.for_product(ctx["product"])),
-        min(2, settings.MAX_PROVIDER_CONCURRENCY))
+        max(1, len(areas)))
+    common = await common_task
     taste, errors = {}, []
     for a, r in zip(areas, results, strict=True):
         if isinstance(r, Exception):
@@ -255,16 +258,29 @@ async def strategy_writer(state: LaunchState, config) -> dict:
     await _stage(state, config, "strategy_writer", "running", "Writing evidence-linked strategies")
     ctx = await ctxsvc.load_for_run(uuid.UUID(state["run_id"]))
     ids, errors = [], []
+    pairs = []
     for sel in state.get("selections") or []:
         aud = next((a for a in ctx["audiences"] if a["id"] == sel["audience_version_id"]), None)
         if aud is None:
             errors.append({"stage": "strategy_writer", "message": "audience version no longer current"})
             continue
+        pairs.append((sel, aud))
+
+    async def write_one(pair):
+        sel, aud = pair
         jc = _ctx(config)
         if jc:
             await jc.beat()
-        r = await strategy.write(ctx, uuid.UUID(state["run_id"]), uuid.UUID(sel["area_id"]), aud,
-                                 workspace_id=uuid.UUID(state["tenant_id"]))
+        return await strategy.write(ctx, uuid.UUID(state["run_id"]), uuid.UUID(sel["area_id"]), aud,
+                                    workspace_id=uuid.UUID(state["tenant_id"]))
+    # independent city × audience strategies are written in parallel (bounded)
+    outs = await research.run_parallel(pairs, write_one, settings.LLM_MAX_CONCURRENCY)
+    for (sel, aud), r in zip(pairs, outs, strict=True):
+        if isinstance(r, BaseException):
+            if isinstance(r, jobs.Cancelled):
+                raise r
+            errors.append({"stage": "strategy_writer", "message": str(r)[:300]})
+            continue
         if r.get("strategy_version_id"):
             ids.append(r["strategy_version_id"])
             await events.emit(uuid.UUID(state["tenant_id"]), "run.strategy", f"Strategy {r['status']} for {aud['name']}",
@@ -283,6 +299,7 @@ async def creative_planner(state: LaunchState, config) -> dict:
     req = state.get("creative_request") or {}
     ids, errors = list(state.get("brief_ids") or []), []
     if not ids:
+        todo: list = []
         for sid in state.get("strategy_ids") or []:
             from ..models import StrategyVersion
             async with session_scope() as s:
@@ -297,17 +314,26 @@ async def creative_planner(state: LaunchState, config) -> dict:
                 other = next((k for k in enabled if k != main), None)
                 # two competing feature-emphasis hypotheses: the strategy's main feature, then the next enabled one
                 angles = [creative.feature_angle(k) for k in (main, other) if k] or [None]
-            for lang in langs:
-                for angle in angles:
-                    jc = _ctx(config)
-                    if jc:
-                        await jc.beat()
-                    r = await creative.create_brief(ctx, uuid.UUID(sid), language=lang, angle=angle,
-                                                    workspace_id=uuid.UUID(state["tenant_id"]))
-                    if r.get("brief_id"):
-                        ids.append(r["brief_id"])
-                    else:
-                        errors.append({"stage": "creative_planner", "message": r.get("message", r.get("status"))})
+            todo.extend((sid, lang, angle) for lang in langs for angle in angles)
+
+        async def brief_one(item):
+            sid, lang, angle = item
+            jc = _ctx(config)
+            if jc:
+                await jc.beat()
+            return await creative.create_brief(ctx, uuid.UUID(sid), language=lang, angle=angle,
+                                               workspace_id=uuid.UUID(state["tenant_id"]))
+        # briefs (and their translations) are drafted in parallel (bounded)
+        outs = await research.run_parallel(todo, brief_one, settings.LLM_MAX_CONCURRENCY)
+        for r in outs:
+            if isinstance(r, BaseException):
+                if isinstance(r, jobs.Cancelled):
+                    raise r
+                errors.append({"stage": "creative_planner", "message": str(r)[:300]})
+            elif r.get("brief_id"):
+                ids.append(r["brief_id"])
+            else:
+                errors.append({"stage": "creative_planner", "message": r.get("message", r.get("status"))})
     upd = await _stage(state, config, "creative_planner", "completed" if ids else "failed", f"{len(ids)} creative briefs drafted")
     return {**upd, "brief_ids": ids, "errors": errors}
 
@@ -317,7 +343,7 @@ async def await_creative(state: LaunchState, config) -> dict:
     from ..services.costs import estimate
     n = len(state.get("brief_ids") or [])
     img, _ = estimate(media.primary(), media.image_model(), "image", 1)
-    vid, src = estimate(media.primary(), media.video_model(), "second", 1)
+    vid, src = estimate(media.primary("video"), media.video_model(), "second", 1)
     decision = interrupt({
         "type": "creative_scope", "title": "Review briefs, then choose what to generate and a spending cap",
         "brief_ids": state.get("brief_ids") or [],

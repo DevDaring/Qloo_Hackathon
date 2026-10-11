@@ -66,3 +66,13 @@ async def test_runs_list_hides_comparison_runs(app):
                           qloo_enabled=False, experiment_label="without_qloo"))
     items = (await c.get(f"/api/v1/projects/{pid}/research-runs")).json()["items"]
     assert [r["experiment_label"] for r in items] == [""] and all(r["qloo_enabled"] for r in items)
+
+
+async def test_many_correct_logins_are_fine_but_failed_ones_are_limited(app):
+    import httpx
+    await make_tenant("login_a")
+    c = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
+    for _ in range(15):  # judges on one network all signing in
+        assert (await c.post("/api/v1/auth/login", json={"username": "login_a", "password": "pw-12345678"})).status_code == 200
+    codes = [(await c.post("/api/v1/auth/login", json={"username": "login_a", "password": "wrong"})).status_code for _ in range(11)]
+    assert codes[:10] == [401] * 10 and codes[10] == 429

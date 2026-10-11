@@ -960,6 +960,8 @@ export interface JourneyNextAction {
   to: string;
   why: string;
   decision_run_id?: string;
+  /** an in-page action instead of navigation, e.g. "open_console" */
+  action?: 'open_console' | string;
   secondary?: { label: string; action: 'duplicate' | string };
 }
 export interface JourneyResponse {

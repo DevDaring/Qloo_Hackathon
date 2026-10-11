@@ -327,10 +327,17 @@ async def common_taste(run_id: uuid.UUID, project_id: uuid.UUID, areas: list[dic
             v.update(state="missing", reason="Qloo is not configured")
         return out
     wkt, polys = _wkt_union(good)
+    # the baseline and every audience's query go out together (bounded by the Qloo concurrency cap)
+    sig = {aud["id"]: ctxsvc.signals_from(entities, aud["id"]) for aud in audiences}
+    pre = {aid: asyncio.ensure_future(qloo.common_places(wkt, entity_ids=e, tag_ids=t, pages=COMMON_PAGES,
+                                                         take=COMMON_TAKE, budget=budget))
+           for aid, (e, t) in sig.items() if e or t}
     try:
         base, bmeta = await qloo.common_places(wkt, entity_ids=[], tag_ids=[], pages=COMMON_PAGES, take=COMMON_TAKE,
                                                budget=budget, context={"run_areas": sorted(polys)})
     except ProviderError as e:
+        for f in pre.values():
+            f.cancel()
         for v in out.values():
             v.update(state="unsupported" if e.kind == "unsupported" else "error", reason=e.message)
         return out
@@ -339,15 +346,13 @@ async def common_taste(run_id: uuid.UUID, project_id: uuid.UUID, areas: list[dic
     names = {a["area_id"]: a["name"] for a in good}
     records = []
     for aud in audiences:
-        ents, tags = ctxsvc.signals_from(entities, aud["id"])
+        ents, tags = sig[aud["id"]]
         if not ents and not tags:
             for v in out.values():
                 v["by_audience"][aud["id"]] = {"state": "no_signals"}
             continue
         try:
-            res, smeta = await qloo.common_places(wkt, entity_ids=ents, tag_ids=tags, pages=COMMON_PAGES,
-                                                  take=COMMON_TAKE, budget=budget,
-                                                  context={"run_areas": sorted(polys), "audience_hash": aud["hash"]})
+            res, smeta = await pre[aud["id"]]
         except ProviderError as e:
             for v in out.values():
                 v["by_audience"][aud["id"]] = {"state": "unsupported" if e.kind == "unsupported" else "error",
@@ -437,18 +442,24 @@ async def taste_analysis(run_id: uuid.UUID, project_id: uuid.UUID, area: dict, a
     by_aud: dict[str, dict] = {}
     records = []
     qloo_places: dict[str, dict] = {}
+    sigs = {}
     for a in audiences:
-        if entities is not None:
-            ents, tags = ctxsvc.signals_from(entities, a["id"])
-        else:
-            ents, tags = await signals_for(project_id, a["id"])
+        sigs[a["id"]] = ctxsvc.signals_from(entities, a["id"]) if entities is not None else await signals_for(project_id, a["id"])
+    radius = int(area["radius_m"])
+    # every audience's two Qloo queries go out together (bounded by the Qloo concurrency cap)
+    main_q = {aid: asyncio.ensure_future(qloo.places_near(area["lat"], area["lon"], radius, entity_ids=e, tag_ids=t,
+                                                          take=20, budget=budget))
+              for aid, (e, t) in sigs.items() if e or t}
+    partner_q = {aid: asyncio.ensure_future(qloo.places_near(area["lat"], area["lon"], radius, entity_ids=e, tag_ids=t,
+                                                             filter_tags=list(partner_tags), take=40, budget=budget))
+                 for aid, (e, t) in sigs.items() if e or t}
+    for a in audiences:
+        ents, tags = sigs[a["id"]]
         if not ents and not tags:
             by_aud[a["id"]] = {"state": "no_signals"}
             continue
         try:
-            results, meta = await qloo.places_near(area["lat"], area["lon"], int(area["radius_m"]), entity_ids=ents,
-                                                   tag_ids=tags, take=20, budget=budget,
-                                                   context={"audience_hash": a["hash"], "area": area["area_id"]})
+            results, meta = await main_q[a["id"]]
         except ProviderError as e:
             by_aud[a["id"]] = {"state": "unsupported" if e.kind == "unsupported" else "error", "message": e.message}
             records.append(ev.new(project_id, kind="data_gap", topic="taste", run_id=run_id, area_id=aid,
@@ -483,10 +494,7 @@ async def taste_analysis(run_id: uuid.UUID, project_id: uuid.UUID, area: dict, a
                            "places": [{k: r.get(k) for k in ("qloo_id", "name", "affinity", "lat", "lon", "explanation")}
                                       for r in top]}
         try:
-            partners, pmeta = await qloo.places_near(area["lat"], area["lon"], int(area["radius_m"]), entity_ids=ents,
-                                                     tag_ids=tags, filter_tags=list(partner_tags), take=40,
-                                                     budget=budget, context={"audience_hash": a["hash"],
-                                                                             "area": area["area_id"], "partners": 1})
+            partners, pmeta = await partner_q[a["id"]]
         except ProviderError as e2:
             partners, pmeta = [], {"error": e2.message}
         kept = 0

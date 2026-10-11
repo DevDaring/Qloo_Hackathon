@@ -59,7 +59,8 @@ function useBottomOffset() {
       let off = 20;
       for (const b of bars) {
         const r = b.getBoundingClientRect();
-        if (r.height > 0 && r.top < window.innerHeight && r.bottom > 0) off = Math.max(off, window.innerHeight - r.top + 12);
+        // stay above the collapsed bar; over an expanded console, sit in its corner instead of mid-page
+        if (r.height > 0 && r.height < window.innerHeight * 0.35 && r.top < window.innerHeight && r.bottom > 0) off = Math.max(off, window.innerHeight - r.top + 12);
       }
       setBottom((cur) => (Math.abs(cur - off) > 1 ? off : cur));
     };
@@ -366,7 +367,7 @@ function Empty({ chips, onAsk, inProject }: { chips: string[]; onAsk: (q: string
       <ul className="mt-2 space-y-2">
         {chips.map((c) => (
           <li key={c}>
-            <button type="button" onClick={() => onAsk(c)} className="flex min-h-[44px] w-full items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2 text-left text-[13.5px] transition hover:border-accent/50 hover:bg-accent-soft/40" data-testid="assistant-chip">
+            <button type="button" onClick={() => onAsk(c)} className="flex min-h-[44px] w-full items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2 text-left text-[13.5px] transition hover:border-accent/50 hover:bg-accent-soft/40" data-testid="assistant-chip" data-cost="llm">
               <Sparkles className="h-3.5 w-3.5 shrink-0 text-brand-ink" aria-hidden />
               {c}
             </button>
@@ -446,7 +447,7 @@ function AssistantBubble({ t, last, onAsk, onLink }: { t: Turn; last: boolean; o
       {r && last && r.suggestions.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {r.suggestions.map((s) => (
-            <button key={s} type="button" onClick={() => onAsk(s)} className="min-h-[36px] rounded-full border border-line bg-surface px-3 text-left text-[12.5px] text-muted hover:border-fg/30 hover:text-fg [@media(pointer:coarse)]:min-h-[44px]" data-testid="assistant-suggestion">
+            <button key={s} type="button" onClick={() => onAsk(s)} className="min-h-[36px] rounded-full border border-line bg-surface px-3 text-left text-[12.5px] text-muted hover:border-fg/30 hover:text-fg [@media(pointer:coarse)]:min-h-[44px]" data-testid="assistant-suggestion" data-cost="llm">
               {s}
             </button>
           ))}
@@ -548,7 +549,9 @@ function Composer({ value, onChange, onSend, busy, areaRef }: { value: string; o
       <button
         type="submit"
         disabled={busy || !value.trim()}
+        title={busy ? 'Waiting for the answer…' : !value.trim() ? 'Type a question first' : 'Send (Enter)'}
         aria-label="Send"
+        data-cost="llm"
         className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#FF7A45] to-[#1F6FEB] text-white shadow-card transition hover:brightness-105 disabled:opacity-50"
       >
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}

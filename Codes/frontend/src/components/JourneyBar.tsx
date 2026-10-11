@@ -9,7 +9,7 @@ import { Button, Tooltip } from './ui';
 
 /** Persistent journey + working context, shown at the top of every project page. */
 export function JourneyHeader() {
-  const { pid, openDecision } = useProjectCtx();
+  const { pid, openDecision, setConsoleOpen } = useProjectCtx();
   const loc = useLocation();
   const nav = useNavigate();
   const sub = loc.pathname.split(`/projects/${pid}`)[1]?.replace(/^\//, '') ?? '';
@@ -19,7 +19,18 @@ export function JourneyHeader() {
   const goNext = () => {
     if (!next) return;
     if (next.decisionRunId) openDecision(next.decisionRunId);
-    else if (next.to) nav(next.to);
+    else if (next.action === 'open_console') setConsoleOpen(true);
+    else if (next.to) {
+      const [path, hash] = next.to.split('#');
+      if (path === loc.pathname) {
+        // already here: never a dead click — jump to the anchor, or show live progress
+        const el = hash ? document.getElementById(hash) ?? document.querySelector(`[data-tour="${hash}"]`) : null;
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          (el as HTMLElement).focus?.({ preventScroll: true });
+        } else setConsoleOpen(true);
+      } else nav(next.to);
+    }
   };
   return (
     <div className="border-b border-line bg-surface/80 backdrop-blur-xl" data-testid="journey" data-tour="journey">

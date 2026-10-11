@@ -26,8 +26,7 @@ function eventTone(t: string): 'ok' | 'bad' | 'brand' | 'accent' | 'warn' | 'neu
 }
 
 export function RunConsole() {
-  const { pid, project, events, stream, consoleRunId, setConsoleRunId, openDecision } = useProjectCtx();
-  const [open, setOpen] = useState(false);
+  const { pid, project, events, stream, consoleRunId, setConsoleRunId, openDecision, consoleOpen: open, setConsoleOpen: setOpen } = useProjectCtx();
   const [confirmCancel, setConfirmCancel] = useState(false);
   const toast = useToast();
   const runs = project?.runs ?? [];
@@ -163,11 +162,18 @@ export function RunConsole() {
                       <>
                         <StageTimeline run={run} />
                         <div className="flex flex-wrap gap-2">
-                          {Object.entries(run.counts ?? {}).map(([k, v]) => (
-                            <span key={k} className="chip">
-                              <span className="num font-semibold text-fg">{v.toLocaleString()}</span> {k}
-                            </span>
-                          ))}
+                          {Object.entries(run.counts ?? {}).map(([k, v]) => {
+                            // counts are numbers, except provider call summaries (e.g. qloo: {logical_requests, cache_hits, …})
+                            const obj = v !== null && typeof v === 'object' ? (v as Record<string, unknown>) : null;
+                            const n = obj ? Number(obj.logical_requests ?? obj.calls ?? NaN) : Number(v);
+                            if (!Number.isFinite(n)) return null;
+                            const label = obj ? `${k} calls${obj.cache_hits ? ` · ${obj.cache_hits} cached` : ''}` : k.replace(/_/g, ' ');
+                            return (
+                              <span key={k} className="chip">
+                                <span className="num font-semibold text-fg">{n.toLocaleString()}</span> {label}
+                              </span>
+                            );
+                          })}
                         </div>
                         {run.errors?.length > 0 && (
                           <ul className="space-y-1 rounded-xl border border-bad/20 bg-bad-soft/50 p-3 text-xs">

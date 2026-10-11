@@ -35,6 +35,8 @@ export interface NextAction {
   to?: string;
   /** a decision that belongs to the user (opens the decision panel instead of navigating) */
   decisionRunId?: string;
+  /** an in-page action (e.g. open the run console) */
+  action?: string;
   /** e.g. "Duplicate to edit" on the locked sample */
   secondary?: JourneyNextAction['secondary'];
 }
@@ -65,7 +67,7 @@ export function stageForPath(sub: string): StageId | null {
 
 export function mapNextAction(n: JourneyNextAction | null | undefined): NextAction | null {
   if (!n) return null;
-  return { label: n.label, why: n.why, to: n.to, decisionRunId: n.decision_run_id, secondary: n.secondary };
+  return { label: n.label, why: n.why, to: n.to, decisionRunId: n.decision_run_id, action: n.action, secondary: n.secondary };
 }
 
 export function mapJourney(pid: string, r: JourneyResponse | undefined): Journey {
@@ -107,5 +109,7 @@ export function researchPrereqs(p?: ProjectDetail): string[] {
   if (!p.product) out.push('save the product brief');
   if (!p.constraints || !p.constraints.candidate_regions.length) out.push('choose candidate cities');
   if (!p.audiences.length) out.push('define at least one audience');
+  // one research run at a time: a second click would only queue a duplicate
+  if (p.runs?.some((r) => r.status === 'running' || r.status === 'queued')) out.push('wait for the research run in progress to finish');
   return out;
 }

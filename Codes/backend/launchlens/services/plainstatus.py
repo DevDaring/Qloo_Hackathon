@@ -63,18 +63,17 @@ def build(data: dict, checked_at: str) -> list[dict]:
                        impact_off="New ads cannot be generated; existing ads and exports still work.",
                        recovery_off="An administrator adds an image/video generation key.",
                        recovery_err="Try again later; nothing is charged for failed requests.", checked_at=checked_at)
-    keys = m.get("keys") or {} if isinstance(m, dict) else {}
-    via = "NanoGPT" if m.get("primary") == "nanogpt" else "xAI"
-    if item["state"] == "working":
-        item["summary"] = item["summary"].replace("is working", f"is working through {via}", 1)
-        if keys.get("primary", {}).get("accepted") is False and keys.get("fallback", {}).get("accepted"):
-            item.update(state="backup", summary="Image and video generation works through NanoGPT's backup key.",
-                        impact="The main NanoGPT key was rejected or is out of balance.",
-                        recovery=["An administrator renews the main NanoGPT key or adds balance."])
-    elif m.get("xai_fallback") and (m.get("xai") or {}).get("authorized"):
-        item.update(state="backup", summary="Image and video generation works through direct xAI (NanoGPT unavailable).",
-                    impact="NanoGPT rejected every key; generation falls back to direct xAI.",
-                    recovery=["An administrator checks the NanoGPT keys and balance."])
+    names = {"xai": "xAI Grok Imagine", "nanogpt": "NanoGPT", "openrouter": "OpenRouter"}
+    chain = (m.get("image_chain") or []) if isinstance(m, dict) else []
+    serving = m.get("serving") if isinstance(m, dict) else None
+    order = " → ".join(names.get(c, c) for c in chain)
+    if serving and chain and serving == chain[0]:
+        item.update(state="working", summary=f"Image and video generation is working through {names.get(serving, serving)}.",
+                    impact=f"Fallback order if it fails: {order}." if len(chain) > 1 else None, recovery=[])
+    elif serving:
+        item.update(state="backup", summary=f"Image and video generation works through the backup provider ({names.get(serving, serving)}).",
+                    impact=f"{names.get(chain[0], chain[0])} is unavailable; order: {order}.",
+                    recovery=["An administrator checks the primary provider's key or credit; nothing else is needed."])
     out.append({**item, "name": "Image and video generation"})
     n = data["narration"]
     out.append({"key": "narration", "name": "Voice-over", "state": "working" if n.get("configured") else "not_set_up",

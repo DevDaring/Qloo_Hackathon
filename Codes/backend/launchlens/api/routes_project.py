@@ -37,9 +37,12 @@ router = APIRouter(prefix="/api/v1")
 # ---------------------------------------------------------------- auth -------
 @router.post("/auth/login", tags=["auth"])
 async def login(body: S.LoginIn, request: Request, response: Response, s: AsyncSession = Depends(get_session)):
-    login_limiter.check(client_ip(request))
+    ip = client_ip(request)
+    if login_limiter.blocked(ip):
+        raise AppError(429, "rate_limited", "Too many failed sign-in attempts; please wait a few minutes.", retryable=True)
     user = (await s.execute(select(User).where(func.lower(User.username) == body.username.lower()))).scalar_one_or_none()
     if user is None or not user.is_active or not verify_password(body.password, user.password_hash):
+        login_limiter.record(ip)
         raise AppError(401, "invalid_credentials", "Username or password is incorrect.")
     m = (await s.execute(select(Membership).where(Membership.user_id == user.id))).scalars().first()
     if m is None:

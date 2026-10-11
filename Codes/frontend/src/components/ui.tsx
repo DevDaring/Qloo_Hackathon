@@ -511,6 +511,7 @@ export function Toggle({
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-labelledby={label ? `${tid}-label` : undefined}
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={cn(
@@ -526,7 +527,11 @@ export function Toggle({
       </button>
       {(label || description) && (
         <label htmlFor={tid} className="cursor-pointer select-none">
-          {label && <span className="block text-sm font-medium text-fg">{label}</span>}
+          {label && (
+            <span id={`${tid}-label`} className="block text-sm font-medium text-fg">
+              {label}
+            </span>
+          )}
           {description && <span className="block text-xs text-muted">{description}</span>}
         </label>
       )}

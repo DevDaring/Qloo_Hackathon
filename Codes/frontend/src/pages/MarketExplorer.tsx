@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   BookmarkPlus,
+  Loader2,
   Network,
   CheckCircle2,
   ChevronLeft,
@@ -36,9 +37,11 @@ import {
   useRuns,
   useTasteLayer,
   type PlaceFilters,
+  isActiveRun,
 } from '../api/hooks';
 import type { Place } from '../api/types';
 import { PageWrap } from '../components/AppShell';
+import { ResearchProgress } from '../components/ResearchProgress';
 import { ActionPreview } from '../components/ActionPreview';
 import { researchPrereqs } from '../hooks/useJourney';
 import { CategoryDistribution, Competitors, EvidenceCoverage, FeatureRelevance, TasteProfile, categoryColor } from '../components/ExplorerCharts';
@@ -208,6 +211,8 @@ function Explorer() {
   const showTable = view === 'list' || !!mapError;
   const run = rd.data?.run;
   const totalsAgree = places.data && analytics.data ? places.data.total === analytics.data.total_places : null;
+  // a run still gathering places: show "Finding places…", never an empty "0 places"
+  const finding = isActiveRun(run?.status) && (places.data?.total ?? 0) === 0;
 
   return (
     <PageWrap className="max-w-[1680px]">
@@ -281,6 +286,7 @@ function Explorer() {
           </>
         }
       />
+      <ResearchProgress />
 
       {runs.isLoading ? (
         <Skeleton className="h-[560px] w-full" />
@@ -294,7 +300,7 @@ function Explorer() {
           <div className="mb-4 flex flex-wrap items-center gap-2 text-[13px]">
             {run && <StatusPill status={run.status} />}
             <span className="chip">
-              <b className="num text-fg" data-testid="places-total">{places.data?.total ?? '…'}</b> places listed
+              <b className="num text-fg" data-testid="places-total">{finding ? '…' : places.data?.total ?? '…'}</b> {finding ? 'finding places' : 'places listed'}
             </span>
             <span className="chip">
               <b className="num text-fg" data-testid="analytics-total">{analytics.data?.total_places ?? '…'}</b> in charts
@@ -531,7 +537,7 @@ function Explorer() {
                         shortlisted={shortlisted}
                         onSelect={setSelected}
                         onError={setMapError}
-                        initial={saved.center ? { center: saved.center, zoom: saved.zoom } : undefined}
+                        initial={saved.center ? { center: saved.center, zoom: saved.zoom } : regionView(project?.constraints?.candidate_regions)}
                         taste={taste ? tastePts : null}
                         drawing={drawing}
                         drawPoints={drawPts}
@@ -568,7 +574,18 @@ function Explorer() {
                           </li>
                         ))}
                       {places.error && <ErrorState error={places.error} onRetry={() => places.refetch()} />}
-                      {!places.isLoading && items.length === 0 && <EmptyState title="No places match these filters" className="m-2" />}
+                      {!places.isLoading && items.length === 0 && (finding ? (
+                        <li className="space-y-2 p-3" data-testid="finding-places" aria-live="polite">
+                          <p className="flex items-center gap-2 text-[13px] font-medium text-muted">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin text-accent motion-reduce:animate-none" aria-hidden /> Finding places… they appear here as each city is retrieved.
+                          </p>
+                          {[0, 1, 2, 3].map((i) => (
+                            <Skeleton key={i} className="h-12 w-full" />
+                          ))}
+                        </li>
+                      ) : (
+                        <EmptyState title="No places match these filters" className="m-2" />
+                      ))}
                       {items.slice(0, limit).map((p) => (
                         <li key={p.id} ref={(el) => (cardRefs.current[p.id] = el)}>
                           <button
@@ -1008,4 +1025,15 @@ function SaveAreaModal({
       </div>
     </Modal>
   );
+}
+
+/** Starting view from the project's own candidate cities (never a fixed default country). */
+function regionView(regions?: { lat?: number | null; lon?: number | null }[] | null): { center: [number, number]; zoom: number } | undefined {
+  const pts = (regions ?? []).filter((r) => r.lat != null && r.lon != null) as { lat: number; lon: number }[];
+  if (!pts.length) return undefined;
+  const lats = pts.map((p) => p.lat);
+  const lons = pts.map((p) => p.lon);
+  const span = Math.max(Math.max(...lats) - Math.min(...lats), Math.max(...lons) - Math.min(...lons));
+  const zoom = span > 30 ? 2.6 : span > 15 ? 3.4 : span > 6 ? 4.4 : span > 2 ? 6 : 9;
+  return { center: [(Math.max(...lons) + Math.min(...lons)) / 2, (Math.max(...lats) + Math.min(...lats)) / 2], zoom };
 }

@@ -6,6 +6,7 @@ import { ApiError, type Schemas } from '../api/client';
 import { mutations, pickDefaultRun, useAnalytics, useApiMutation, useAudiences, useProviders, useRun, useRuns } from '../api/hooks';
 import type { AudienceRole, AudienceWithEntities, EntityCandidate, Lang, ResolvedEntity } from '../api/types';
 import { PageWrap } from '../components/AppShell';
+import { ResearchProgress } from '../components/ResearchProgress';
 import { TasteProfile } from '../components/ExplorerCharts';
 import { TagInput, fieldErrors } from '../components/FormBits';
 import { ConfirmDialog, Modal } from '../components/Overlay';
@@ -51,6 +52,7 @@ export default function AudienceInsights() {
           </Editable>
         }
       />
+      <ResearchProgress />
       {qlooOff && (
         <Callout tone="warn" className="mb-6" icon={<Fingerprint className="h-4 w-4 text-warn" />} title="Qloo is not configured — interests cannot be resolved to Qloo entities">
           {providers?.qloo.message} Interests stay listed but unresolved, and taste signals show as Unknown. Add <code className="font-mono">QLOO_API_KEY</code> to the server’s .env to enable resolution.

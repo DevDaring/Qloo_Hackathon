@@ -5,7 +5,7 @@ import { ApiError } from '../api/client';
 import { mutations } from '../api/hooks';
 import type { GeoResult, Region } from '../api/types';
 import { cn, fmtBytes } from '../lib/format';
-import { Button, ErrorState, Input, InlineSpinner } from './ui';
+import { Button, ErrorState, Input, InlineSpinner, Tooltip } from './ui';
 
 /** Editable list of short strings ("tags"). Enter or comma adds. */
 export function TagInput({
@@ -116,9 +116,11 @@ export function GeoSearch({ onPick, country = 'IN', placeholder = 'City, neighbo
             }}
           />
         </div>
-        <Button variant="outline" onClick={search} loading={busy} disabled={q.trim().length < 2}>
-          Search
-        </Button>
+        <Tooltip content={q.trim().length < 2 ? 'Type at least two letters of a place first.' : 'Look the place up on OpenStreetMap (Nominatim).'}>
+          <Button variant="outline" onClick={search} loading={busy} disabled={q.trim().length < 2}>
+            Search
+          </Button>
+        </Tooltip>
       </div>
       {err != null && <ErrorState error={err} compact className="mt-2" />}
       {results && (

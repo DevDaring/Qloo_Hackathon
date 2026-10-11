@@ -28,6 +28,7 @@ import { useOnline } from '../hooks/useTheme';
 import { Logo } from './Logo';
 import { GuideButton, GuideProvider } from './Guide';
 import { Assistant } from './Assistant';
+import { ActivityIndicator, WorkspaceWatcher } from './Activity';
 import { ThemeToggle } from './ThemeToggle';
 import { useDialog } from './Overlay';
 import { Badge, ErrorState, Skeleton } from './ui';
@@ -137,6 +138,7 @@ function AppShell() {
             <Logo />
           </Link>
           <div className="ml-auto flex items-center gap-2">
+            <ActivityIndicator compact />
             <GuideButton compact />
             <ThemeToggle />
           </div>
@@ -144,6 +146,7 @@ function AppShell() {
         <header className="sticky top-0 z-40 hidden h-14 items-center gap-3 border-b border-line bg-surface/80 px-6 backdrop-blur-xl lg:flex xl:px-10" data-testid="app-header">
           <Crumbs />
           <div className="ml-auto flex items-center gap-3">
+            <ActivityIndicator />
             <GuideButton />
             <ThemeToggle />
           </div>
@@ -168,6 +171,7 @@ function AppShell() {
         </main>
       </div>
       <Assistant />
+      <WorkspaceWatcher />
     </div>
     </GuideProvider>
   );
@@ -193,7 +197,7 @@ function Crumbs() {
           <>
             <li aria-hidden className="text-subtle">/</li>
             <li className="min-w-0 truncate">
-              <Link to={`/projects/${pid}`} className={cn('hover:text-fg', !page && 'font-semibold text-fg')}>
+              <Link to={`/projects/${pid}`} aria-current={!page || !sub ? 'page' : undefined} className={cn('hover:text-fg', (!page || !sub) && 'font-semibold text-fg')}>
                 {project?.name ?? 'Project'}
               </Link>
             </li>

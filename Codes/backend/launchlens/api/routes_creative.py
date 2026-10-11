@@ -236,8 +236,8 @@ async def estimate_generation(brief_id: uuid.UUID, presets: str = "square", mode
     gen = [sc for sc in (sb.scenes if sb else []) if sc.kind == "generated" and (only_scene is None or sc.idx == only_scene)]
     secs = sum(int(sc.duration_s) for sc in gen)
     frames, _ = costs.estimate(media.primary(), media.image_model(), "image", len(gen))
-    vid_list, vid_src = costs.estimate(media.primary(), media.video_model(), "second", secs) if mode == "full" else (Decimal(0), "")
-    vid_held = costs.reservation(media.primary(), media.video_model(), "second", secs) if mode == "full" else Decimal(0)
+    vid_list, vid_src = costs.estimate(media.primary("video"), media.video_model(), "second", secs) if mode == "full" else (Decimal(0), "")
+    vid_held = costs.reservation(media.primary("video"), media.video_model(), "second", secs) if mode == "full" else Decimal(0)
     chars = sum(len(sc.spoken_copy or "") for sc in gen) if narration else 0
     def s_(v):
         return str(v) if v is not None else "unknown"
@@ -281,7 +281,7 @@ async def queue_video(brief_id: uuid.UUID, body: S.VideosIn, p: Principal = Depe
         raise AppError(422, "too_long", f"Storyboard is {sb.total_seconds}s; the limit is {settings.MAX_VIDEO_SECONDS}s.")
     n_frames = sum(1 for sc in sb.scenes if sc.kind == "generated")
     img_est, _ = costs.estimate(media.primary(), media.image_model(), "image", n_frames)
-    vid_est = costs.reservation(media.primary(), media.video_model(), "second", gen_seconds) if body.mode == "full" else Decimal(0)
+    vid_est = costs.reservation(media.primary("video"), media.video_model(), "second", gen_seconds) if body.mode == "full" else Decimal(0)
     src = "pricing file (list price x reserve_multiplier headroom)"
     nonce = uuid.uuid4().hex[:8] if body.regenerate else ""
     from ..services.cache import stable_hash

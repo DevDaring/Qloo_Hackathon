@@ -18,6 +18,8 @@ def keys(monkeypatch):
     monkeypatch.setattr(settings, "NANOGPT_API_KEY", "sk-nano-primary")
     monkeypatch.setattr(settings, "NANOGPT_FALLBACK_API_KEY", "sk-nano-fallback")
     monkeypatch.setattr(settings, "MEDIA_PROVIDER", "nanogpt")
+    monkeypatch.setattr(settings, "MEDIA_IMAGE_CHAIN", "nanogpt,openrouter,xai")
+    monkeypatch.setattr(settings, "MEDIA_VIDEO_CHAIN", "nanogpt,xai")
     calls = []
     return calls
 
@@ -59,18 +61,45 @@ async def test_content_refusal_is_not_retried_elsewhere(keys, monkeypatch):
     assert e.value.kind == "policy_refusal" and len(keys) == 1  # no second key, no xAI
 
 
-async def test_both_keys_rejected_uses_direct_xai_only_when_enabled(keys, monkeypatch):
+async def test_both_keys_rejected_falls_through_the_chain(keys, monkeypatch):
+    from launchlens.providers import openrouter_image
     monkeypatch.setattr(nanogpt, "request", fake_request(keys, rejected=("sk-nano-primary", "sk-nano-fallback")))
+    monkeypatch.setattr(openrouter_image, "configured", lambda: False)
     monkeypatch.setattr(xai, "configured", lambda: True)
 
     async def xai_image(prompt, aspect_ratio="1:1", **kw):
         return {"bytes": b"x", "mime": "image/png", "cost_usd": None, "model": "grok-imagine-image"}
     monkeypatch.setattr(xai, "generate_image", xai_image)
     assert (await media.generate_image("a street"))["provider"] == "xai"
-    monkeypatch.setattr(settings, "MEDIA_XAI_FALLBACK", False)
+    monkeypatch.setattr(settings, "MEDIA_IMAGE_CHAIN", "nanogpt")  # nothing after NanoGPT: the error surfaces
     with pytest.raises(ProviderError) as e:
         await media.generate_image("a street")
     assert e.value.kind == "auth"
+
+
+async def test_owner_order_xai_first_then_nanogpt_for_video(keys, monkeypatch):
+    monkeypatch.setattr(settings, "MEDIA_VIDEO_CHAIN", "xai,nanogpt")
+    monkeypatch.setattr(xai, "configured", lambda: True)
+    calls = []
+
+    async def xai_start(body):
+        calls.append("xai")
+        raise ProviderError("xai", "auth", "Your team has used all available credits", status=403)
+    monkeypatch.setattr(xai, "start_video", xai_start)
+
+    async def nano_start(body):
+        calls.append("nanogpt")
+        return "vid_123"
+    monkeypatch.setattr(nanogpt, "start_video", nano_start)
+    assert media.primary("video") == "xai"
+    rid, who, _m = await media.start_video("pan", 5, "9:16", image_ref="data:image/jpeg;base64,AAAA")
+    assert (rid, who) == ("vid_123", "nanogpt") and calls == ["xai", "nanogpt"]
+
+    async def xai_unknown(body):
+        raise ProviderError("xai", "submission_unknown", "sent, no response")
+    monkeypatch.setattr(xai, "start_video", xai_unknown)
+    with pytest.raises(ProviderError):  # an ambiguous submission is never resubmitted elsewhere
+        await media.start_video("pan", 5, "9:16", image_ref="data:image/jpeg;base64,AAAA")
 
 
 async def test_video_ids_route_polling_to_their_provider(keys, monkeypatch):

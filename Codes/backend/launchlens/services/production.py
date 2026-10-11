@@ -194,7 +194,8 @@ async def produce_images(ctx: JobCtx, brief_id: uuid.UUID, presets: list[str], *
         if pv and pv.brand_colours:
             accent = pv.brand_colours[0]
     out = {"created": [], "reused": [], "failed": []}
-    for preset in presets[: settings.MAX_ASSETS_PER_BATCH]:
+
+    async def one(preset: str) -> None:
         await ctx.beat(status="running", stage=f"image:{preset}")
         aspect = compose.PRESETS[preset]["provider_aspect"]
         bg_input = stable_hash({"visual": brief.visual_hash, "prompt": c["background_prompt"], "aspect": aspect,
@@ -205,12 +206,13 @@ async def produce_images(ctx: JobCtx, brief_id: uuid.UUID, presets: list[str], *
                 bg = await assetsvc.get(uuid.UUID(reuse_background_from[preset]))
             bg = bg or await assetsvc.find_by_input(ctx.job.workspace_id, "background", bg_input)
             if bg is None:
-                await ctx.emit(f"Generating {preset} background with xAI", stage="image")
+                await ctx.emit(f"Generating {preset} background ({media.primary()} · {media.image_model()})", stage="image",
+                               preset=preset, state="generating")
 
                 def make_bg(suffix: str, _inp=bg_input, _aspect=aspect, _preset=preset):
                     return paid_image(ctx, key=f"img:{_inp}{suffix}", prompt=clean_prompt(c["background_prompt"]) + BG_GUARD,
                                       aspect=_aspect, kind="background", project_id=brief.project_id, brief_id=brief.id,
-                                      label=f"xAI background ({settings.XAI_IMAGE_MODEL}, {_aspect})",
+                                      label=f"AI background ({media.image_model()}, {_aspect})",
                                       lineage={"brief_id": str(brief.id), "visual_hash": brief.visual_hash},
                                       identity_hash=brief.identity_hash, input_hash=_inp if not suffix else
                                       stable_hash({"i": _inp, "s": suffix}))
@@ -224,7 +226,7 @@ async def produce_images(ctx: JobCtx, brief_id: uuid.UUID, presets: list[str], *
             existing = await assetsvc.find_by_input(ctx.job.workspace_id, "flyer", flyer_input)
             if existing:
                 out["reused"].append({"preset": preset, "flyer_id": str(existing.id)})
-                continue
+                return
             bg_img = await _open_image(bg)
             final, layout, quality = await asyncio.to_thread(compose.compose, bg_img, product_img, copy, preset,
                                                              logo=logo_img, accent=accent,
@@ -246,12 +248,18 @@ async def produce_images(ctx: JobCtx, brief_id: uuid.UUID, presets: list[str], *
                 approval_state="needs_review" if quality["passed"] and not quality["claims"] else "draft",
                 metadata={"translation_status": brief.translation_status, "background_model": bg.provider_model})
             out["created"].append({"preset": preset, "flyer_id": str(flyer.id), "passed": quality["passed"]})
-            await ctx.emit(f"Composed {preset} flyer", stage="image", asset_id=str(flyer.id))
+            await ctx.emit(f"Composed {preset} flyer", stage="image", asset_id=str(flyer.id), preset=preset, state="done")
         except ProviderError as e:
             out["failed"].append({"preset": preset, "error": e.as_dict()})
-            await ctx.emit(f"{preset} flyer failed: {e.message}", stage="image")
-            if e.kind in ("auth", "not_configured", "submission_unknown"):
-                break
+            await ctx.emit(f"{preset} flyer failed: {e.message}", stage="image", preset=preset, state="failed")
+
+    # each format is independent: generate and compose them in parallel (bounded)
+    sem = asyncio.Semaphore(3)
+
+    async def guarded(preset: str) -> None:
+        async with sem:
+            await one(preset)
+    await asyncio.gather(*(guarded(p) for p in presets[: settings.MAX_ASSETS_PER_BATCH]))
     return out
 
 
@@ -269,7 +277,7 @@ async def _scene_frame(ctx: JobCtx, brief: CreativeBrief, scene: StoryboardScene
     if found:
         return found
     return await paid_image(ctx, key=f"frame:{inp}", prompt=prompt, aspect="9:16", kind="scene_frame",
-                            project_id=brief.project_id, brief_id=brief.id, label=f"Scene {scene.idx + 1} reference frame (xAI)",
+                            project_id=brief.project_id, brief_id=brief.id, label=f"Scene {scene.idx + 1} reference frame",
                             lineage={"scene_id": str(scene.id), "brief_id": str(brief.id)}, identity_hash=brief.identity_hash,
                             input_hash=inp)
 
@@ -283,7 +291,7 @@ def _jpeg_data_uri(data: bytes, max_side: int = 1024) -> str:
 
 
 async def _submit_scene(ctx: JobCtx, brief: CreativeBrief, scene: StoryboardScene, frame: Asset, nonce: str) -> dict:
-    provider, model = media.primary(), media.video_model()
+    provider, model = media.primary("video"), media.video_model()
     seconds = int(scene.duration_s)
     prompt = clean_prompt(f"{scene.shot_description}. {brief.content.get('setting', '')}. {brief.content.get('mood', '')}.") + VIDEO_GUARD
     key = f"vid:{stable_hash({'scene': scene.input_hash, 'frame': frame.sha256, 'model': model, 'nonce': nonce, 's': seconds})}"
@@ -318,7 +326,8 @@ async def _submit_scene(ctx: JobCtx, brief: CreativeBrief, scene: StoryboardScen
     attempt.remote_request_id, attempt.status = rid, "submitted"
     attempt.response_summary = {"ledger_id": str(ledger.id), "served_by": served_by}
     label = "NanoGPT" if served_by == "nanogpt" else "xAI"
-    await ctx.emit(f"Scene {scene.idx + 1} submitted to {label} (request {rid[:12]}…)", stage="video")
+    await ctx.emit(f"Scene {scene.idx + 1} submitted to {label} (request {rid[:12]}…)", stage="video",
+                   scene=scene.idx, state="rendering", provider=served_by)
     return {"scene": scene, "attempt": attempt, "state": "pending"}
 
 
@@ -363,13 +372,15 @@ async def _poll_all(ctx: JobCtx, brief: CreativeBrief, pending: list[dict]) -> N
                     sc = await s.get(StoryboardScene, p["scene"].id)
                     sc.clip_asset_id, sc.status = clip.id, "generated"
                 p["state"], p["clip"] = "done", clip
-                await ctx.emit(f"Scene {p['scene'].idx + 1} clip downloaded", stage="video", asset_id=str(clip.id))
+                await ctx.emit(f"Scene {p['scene'].idx + 1} clip downloaded", stage="video", asset_id=str(clip.id),
+                               scene=p['scene'].idx, state="clip_ready")
             else:
                 p["state"], p["error"] = "failed", {"kind": "failed", "message": st.get("error") or st["state"]}
                 await jobs.update_attempt(p["attempt"].id, status="failed", error=p["error"])
                 if ledger_id:
                     await costs.release(uuid.UUID(ledger_id))
-                await ctx.emit(f"Scene {p['scene'].idx + 1} failed at xAI: {p['error']['message']}", stage="video")
+                await ctx.emit(f"Scene {p['scene'].idx + 1} failed: {p['error']['message']}", stage="video",
+                               scene=p['scene'].idx, state="failed")
         if any(p["state"] == "pending" for p in pending):
             await asyncio.sleep(interval)
 
@@ -404,10 +415,13 @@ async def produce_video(ctx: JobCtx, brief_id: uuid.UUID, *, orientations: list[
                 if a and not a.deleted_at and not a.stale:
                     reusable[sc.idx] = a
     frames: dict[int, Asset] = {}
-    for sc in gen_scenes:
+    fatal = False
+
+    async def frame_for(sc) -> None:
+        nonlocal fatal
         await ctx.beat(status="running")
         if sc.idx in reusable:
-            continue  # existing clip reused; no new reference frame needed
+            return  # existing clip reused; no new reference frame needed
         if mode == "animatic" and not regenerate(sc):
             async with session_scope() as s:
                 prior_frame = (await s.execute(select(Asset).where(
@@ -415,7 +429,7 @@ async def produce_video(ctx: JobCtx, brief_id: uuid.UUID, *, orientations: list[
                     Asset.lineage["scene_id"].astext == str(sc.id)).order_by(Asset.created_at.desc()).limit(1))).scalar_one_or_none()
             if prior_frame:
                 frames[sc.idx] = prior_frame
-                continue
+                return
         try:
             base_nonce = nonce if regenerate(sc) else ""
             frame, rv = await gated(lambda suffix, _sc=sc, _n=base_nonce: _scene_frame(ctx, brief, _sc, _n + suffix),
@@ -425,12 +439,22 @@ async def produce_video(ctx: JobCtx, brief_id: uuid.UUID, *, orientations: list[
                                          "error": {"kind": "failed", "message": "Reference frame failed fidelity review twice "
                                                    f"({', '.join(rv['flags'])}); no video was paid for this scene. "
                                                    "Edit the scene description and regenerate."}})
-                continue
+                return
             frames[sc.idx] = frame
         except ProviderError as e:
             result["failed"].append({"scene": sc.idx, "stage": "reference_frame", "error": e.as_dict()})
             if e.kind in ("auth", "not_configured", "submission_unknown") or e.status == 402:
-                return result
+                fatal = True
+
+    # every scene's reference frame is generated in parallel (bounded); no clip is paid for until its frame passes review
+    sem = asyncio.Semaphore(3)
+
+    async def guarded(sc) -> None:
+        async with sem:
+            await frame_for(sc)
+    await asyncio.gather(*(guarded(sc) for sc in gen_scenes))
+    if fatal:
+        return result
     clips: dict[int, Asset] = {}
     if mode == "full":
         pending = []
@@ -569,6 +593,7 @@ async def produce_video(ctx: JobCtx, brief_id: uuid.UUID, *, orientations: list[
                                      "duration": res.duration, "passed": quality["passed"], "audio_state": res.audio_state,
                                      "native_xai": is_native})
             await ctx.emit(f"{'Final video' if is_native else 'Animatic'} ({orientation}) assembled", stage="video",
+                           orientation=orientation, state="final",
                            asset_id=str(final.id))
     result["status"] = "completed" if not result["failed"] else "partially_completed"
     return result

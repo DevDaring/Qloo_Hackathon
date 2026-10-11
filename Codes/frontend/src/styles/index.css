@@ -255,6 +255,21 @@
   }
 }
 
+/* an indeterminate "working" bar: honest motion, no fake percentage */
+.shimmer-bar {
+  background: linear-gradient(90deg, transparent, rgb(var(--secondary) / 0.9), rgb(var(--primary) / 0.9), transparent);
+  background-size: 50% 100%;
+  background-repeat: no-repeat;
+  animation: ll-shimmer 1.6s ease-in-out infinite;
+}
+@keyframes ll-shimmer {
+  0% { background-position: -50% 0; }
+  100% { background-position: 150% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .shimmer-bar { animation: none; background-position: 50% 0; }
+}
+
 /* deep-link target (journey blockers): a brief, calm highlight */
 .hash-target {
   outline: 3px solid rgb(var(--secondary) / 0.55);

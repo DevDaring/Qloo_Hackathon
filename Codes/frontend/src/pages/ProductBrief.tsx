@@ -45,6 +45,7 @@ import {
   Tabs,
   Textarea,
   Toggle,
+  Tooltip,
 } from '../components/ui';
 import { cn, fmtDate, fmtMoney, humanize } from '../lib/format';
 
@@ -603,6 +604,7 @@ function ClaimsTab() {
             </Select>
           </Field>
           <Checkbox checked={approved} onChange={setApproved} label="Approve for use in ads" />
+          <Tooltip content={text.trim().length < 3 ? 'Write the claim first (at least 3 characters).' : 'Adds the claim to this product version. Unsupported claims can’t be approved.'} className="w-full">
           <Button
             className="w-full"
             disabled={text.trim().length < 3}
@@ -619,6 +621,7 @@ function ClaimsTab() {
           >
             Add claim
           </Button>
+          </Tooltip>
           <p className="text-xs text-subtle">Measurements, certifications and clinical wording must be backed by evidence you hold. Unsupported or prohibited claims cannot be approved.</p>
         </div>
       </Card>

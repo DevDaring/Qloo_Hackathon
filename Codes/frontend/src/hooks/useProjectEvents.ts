@@ -57,6 +57,12 @@ export function useProjectEvents(pid?: string) {
           qc.invalidateQueries({ queryKey: ['run'] });
           qc.invalidateQueries({ queryKey: ['runs', pid] });
           qc.invalidateQueries({ queryKey: ['placements', pid] });
+          // research results arrive while a run is in progress: everything derived from them must refresh too
+          for (const k of ['places', 'analytics', 'evidence', 'taste-story', 'taste-layer', 'audience-compare', 'opportunities', 'compare'])
+            qc.invalidateQueries({ queryKey: [k] });
+          qc.invalidateQueries({ queryKey: ['areas', pid] });
+          qc.invalidateQueries({ queryKey: ['journey', pid] });
+          qc.invalidateQueries({ queryKey: ['project', pid] });
         }
         if (p.has('strategies')) qc.invalidateQueries({ queryKey: ['strategies', pid] });
         if (p.has('jobs')) qc.invalidateQueries({ queryKey: ['jobs', pid] });

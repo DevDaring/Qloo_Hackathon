@@ -23,6 +23,7 @@ import {
 import { mutations, useApiMutation, usePlacements, usePublicConfig, useStrategies, useStrategy } from '../api/hooks';
 import type { Placement, Place, Strategy, StrategyDetail } from '../api/types';
 import { PageWrap } from '../components/AppShell';
+import { ResearchProgress } from '../components/ResearchProgress';
 import { EvidenceBadge, EvidenceChip } from '../components/Evidence';
 import { SERIES } from '../components/ExplorerCharts';
 import { MapView } from '../components/MapView';
@@ -63,6 +64,7 @@ export default function CampaignStrategy() {
         title="Campaign strategy"
         description="Evidence-linked launch strategies per location × audience: positioning, the feature to lead with, partners, placements, a small pilot and a budget scenario."
       />
+      <ResearchProgress />
       {q.isLoading && <SkeletonCard lines={10} />}
       {q.error && <ErrorState error={q.error} onRetry={() => q.refetch()} />}
       {q.data && groups.length === 0 && (

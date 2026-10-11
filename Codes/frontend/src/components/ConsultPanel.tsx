@@ -110,7 +110,7 @@ export function ConsultPanel() {
         {ask.error && <ErrorState error={ask.error} compact />}
         <div className="flex flex-wrap gap-1.5">
           {SUGGESTIONS.map((s) => (
-            <button key={s} type="button" onClick={() => submit(s)} disabled={ask.isPending} className="chip transition hover:border-accent/40 hover:text-fg">
+            <button key={s} type="button" onClick={() => submit(s)} disabled={ask.isPending} data-cost="llm" className="chip transition hover:border-accent/40 hover:text-fg">
               <Sparkles className="h-3 w-3" /> {s}
             </button>
           ))}
@@ -126,7 +126,7 @@ export function ConsultPanel() {
             Question
           </label>
           <Textarea id="consult" value={msg} onChange={(e) => setMsg(e.target.value)} rows={2} className="min-h-[44px]" placeholder="Ask about locations, evidence or trade-offs…" />
-          <Button type="submit" loading={ask.isPending} aria-label="Ask" icon={<Send className="h-4 w-4" />} />
+          <Button type="submit" loading={ask.isPending} aria-label="Ask" data-cost="llm" icon={<Send className="h-4 w-4" />} />
         </form>
       </div>
       <RevisionPreviewSheet open={!!preview} body={preview} onClose={() => setPreview(null)} rationale={last?.proposed_revision?.rationale} />

@@ -40,6 +40,13 @@ router = APIRouter(prefix="/api/v1")
 # ---------------------------------------------------------------- runs -------
 async def start_run(s: AsyncSession, p: Principal, project_id: uuid.UUID, *, qloo_enabled: bool = True, label: str = "",
                     idem: str | None = None) -> tuple[ResearchRun, Job]:
+    if qloo_enabled and not label:
+        busy = (await s.execute(select(ResearchRun.id).where(ResearchRun.project_id == project_id,
+                                                             ResearchRun.experiment_label == "",
+                                                             ResearchRun.status.in_(("queued", "running"))).limit(1))).first()
+        if busy:
+            raise AppError(409, "run_in_progress", "A research run is already in progress for this project. "
+                                                   "Watch it in the run console; start another when it finishes.")
     ctx = await ctxsvc.load(project_id)
     if not ctx["constraints"] or not ctx["product"]:
         raise AppError(409, "not_ready", "Save the product brief and launch constraints before starting research.")

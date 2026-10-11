@@ -642,7 +642,8 @@ def _next_action(current, stages, run, briefs, approved, base, locked) -> dict:
         return {"label": b["fix"], "to": b["to"], "why": b["message"]}
     if current == "explore":
         if run and run.status in ("queued", "running"):
-            return {"label": "Watch research progress", "to": f"{base}/explorer", "why": "Research is running now."}
+            return {"label": "Watch research progress", "to": f"{base}/explorer", "action": "open_console",
+                    "why": "Research is running now — the run console shows each step live."}
         return {"label": "Start research", "to": f"{base}/explorer#start",
                 "why": "Compare candidate cities on practical evidence and Qloo taste signals."}
     if current == "strategy":

@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { Outlet, useLocation, useParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Hand } from 'lucide-react';
@@ -11,6 +11,7 @@ import { JourneyHeader } from './JourneyBar';
 import { LockedBanner } from './Locked';
 import { useHashTarget } from '../hooks/useHashTarget';
 import { RunConsole } from './RunConsole';
+import { OPEN_CONSOLE_EVENT, ProjectNotifications, takeConsoleRequest } from './Activity';
 import { Button, ErrorState, Skeleton } from './ui';
 
 export function ProjectLayout() {
@@ -21,6 +22,13 @@ export function ProjectLayout() {
   const [decisionRun, setDecisionRun] = useState<string | undefined>();
   const [decisionOpen, setDecisionOpen] = useState(false);
   const [consoleRunId, setConsoleRunId] = useState<string | undefined>();
+  const [consoleOpen, setConsoleOpen] = useState(() => takeConsoleRequest(pid));
+  // the header activity indicator (and notifications) can open the console from anywhere
+  useEffect(() => {
+    const open = () => setConsoleOpen(true);
+    window.addEventListener(OPEN_CONSOLE_EVENT, open);
+    return () => window.removeEventListener(OPEN_CONSOLE_EVENT, open);
+  }, []);
   const [sel, setSelState] = useState<Selection>(() => loadSelection(pid));
   const setSel = useCallback(
     (patch: Partial<Selection>) =>
@@ -53,10 +61,12 @@ export function ProjectLayout() {
       },
       consoleRunId,
       setConsoleRunId,
+      consoleOpen,
+      setConsoleOpen,
       sel,
       setSel,
     }),
-    [pid, pq.data, events, state, waitingRunId, consoleRunId, sel, setSel],
+    [pid, pq.data, events, state, waitingRunId, consoleRunId, consoleOpen, sel, setSel],
   );
 
   if (pq.error && (pq.error as { status?: number }).status === 404)
@@ -116,6 +126,7 @@ export function ProjectLayout() {
             </Suspense>
           </div>
           <RunConsole />
+          <ProjectNotifications />
         </div>
         <DecisionPanel pid={pid} runId={decisionRun} open={decisionOpen} onClose={() => setDecisionOpen(false)} />
       </EvidenceProvider>

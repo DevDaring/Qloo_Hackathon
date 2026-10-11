@@ -99,7 +99,10 @@ class Settings(BaseSettings):
     NANOGPT_IMAGE_MODEL: str = "grok-imagine-image"
     NANOGPT_VIDEO_MODEL: str = "grok-imagine-video"
     NANOGPT_TEXT_MODEL: str = "openai/gpt-4.1-mini"  # reasoning via NanoGPT (strict JSON output verified)
-    MEDIA_XAI_FALLBACK: bool = True
+    MEDIA_XAI_FALLBACK: bool = True  # legacy flag (the chains below decide now)
+    # generation order, first configured provider first (owner's choice 2026-10-11: xAI recharged)
+    MEDIA_IMAGE_CHAIN: str = "xai,nanogpt,openrouter"
+    MEDIA_VIDEO_CHAIN: str = "xai,nanogpt"
     XAI_POLL_INTERVAL_SECONDS: float = 5.0
     XAI_JOB_TIMEOUT_SECONDS: float = 900.0
 
@@ -155,6 +158,8 @@ class Settings(BaseSettings):
     # Bounded execution
     WORKER_CONCURRENCY: int = 3
     MAX_PROVIDER_CONCURRENCY: int = 4
+    QLOO_MAX_CONCURRENCY: int = 6
+    LLM_MAX_CONCURRENCY: int = 3   # strategies and briefs written in parallel
     JOB_LEASE_SECONDS: int = 120
     MAX_AGENT_STEPS: int = 60
     MAX_RESEARCH_CALLS: int = 80

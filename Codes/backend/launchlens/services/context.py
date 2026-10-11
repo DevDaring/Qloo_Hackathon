@@ -153,9 +153,9 @@ def runtime_info() -> dict:
     pricing = Path(settings.PROVIDER_PRICING_FILE)
     return {"reasoning_primary": llm.primary_model(),
             "reasoning_fallback": (f"{settings.LLM_FALLBACK_PROVIDER}" if settings.LLM_ALLOW_FALLBACK else None),
-            "xai_text_model": settings.XAI_TEXT_MODEL, "media_provider": settings.MEDIA_PROVIDER,
-            "image_model": settings.NANOGPT_IMAGE_MODEL if settings.MEDIA_PROVIDER == "nanogpt" else settings.XAI_IMAGE_MODEL,
-            "video_model": settings.NANOGPT_VIDEO_MODEL if settings.MEDIA_PROVIDER == "nanogpt" else settings.XAI_VIDEO_MODEL, "qloo_base_url": settings.QLOO_BASE_URL,
+            "xai_text_model": settings.XAI_TEXT_MODEL, "media_image_chain": settings.MEDIA_IMAGE_CHAIN,
+            "media_video_chain": settings.MEDIA_VIDEO_CHAIN, "image_model": settings.XAI_IMAGE_MODEL,
+            "video_model": settings.XAI_VIDEO_MODEL, "qloo_base_url": settings.QLOO_BASE_URL,
             "translate_model": settings.SARVAM_TRANSLATE_MODEL,
             "pricing_sha256": hashlib.sha256(pricing.read_bytes()).hexdigest()[:16] if pricing.exists() else None,
             "max_run_cost_usd": str(settings.MAX_RUN_COST_USD)}

@@ -79,7 +79,10 @@ async def _get(path: str, params: dict, *, budget: CallBudget | None, context: d
     if not configured():
         raise ProviderError(PROVIDER, "not_configured", "QLOO_API_KEY is not set in .env")
     clean = {k: v for k, v in params.items() if v not in (None, "", [])}
-    qh = cache.query_hash(PROVIDER, path, clean, context, API_VERSION + "|" + settings.QLOO_BASE_URL)
+    # The parameters fully determine a Qloo response (signals, location, filters), so the cache key uses only
+    # them: identical queries from different projects or runs share one cached answer. `context` is kept for
+    # callers' provenance but no longer splits the cache.
+    qh = cache.query_hash(PROVIDER, path, clean, None, API_VERSION + "|" + settings.QLOO_BASE_URL)
     hit = await cache.get(PROVIDER, qh)
     if hit is not None:
         if budget:
@@ -104,14 +107,26 @@ async def _get(path: str, params: dict, *, budget: CallBudget | None, context: d
         _inflight.pop(qh, None)
 
 
+_slots: asyncio.Semaphore | None = None
+
+
+def _sem() -> asyncio.Semaphore:
+    """Bounded concurrency for real Qloo requests across the whole process."""
+    global _slots
+    if _slots is None:
+        _slots = asyncio.Semaphore(max(1, settings.QLOO_MAX_CONCURRENCY))
+    return _slots
+
+
 async def _fetch(path: str, clean: dict, qh: str, budget: CallBudget | None, ttl: int | None) -> tuple[dict, dict]:
     if budget:
         budget.take()
     url = settings.QLOO_BASE_URL.rstrip("/") + path
     try:
-        resp = await request(PROVIDER, "GET", url, headers=_headers(), params=clean,
-                             timeout=settings.QLOO_REQUEST_TIMEOUT_SECONDS, attempts=3,
-                             stats=budget.stats if budget else None)
+        async with _sem():
+            resp = await request(PROVIDER, "GET", url, headers=_headers(), params=clean,
+                                 timeout=settings.QLOO_REQUEST_TIMEOUT_SECONDS, attempts=3,
+                                 stats=budget.stats if budget else None)
     except ProviderError as e:
         if e.kind == "not_found":  # Qloo answers 404 for "no results"
             empty: dict[str, Any] = {"success": True, "results": {}, "_no_results": True}

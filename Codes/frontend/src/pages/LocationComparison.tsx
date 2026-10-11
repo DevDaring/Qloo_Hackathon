@@ -7,6 +7,7 @@ import { mutations, pickDefaultRun, useAudiences, useRevisions, useRun, useRunDi
 import { RevisionPreviewSheet } from '../components/RevisionPreview';
 import type { Assessment, Component } from '../api/types';
 import { PageWrap } from '../components/AppShell';
+import { ResearchProgress } from '../components/ResearchProgress';
 import { EvidenceChip } from '../components/Evidence';
 import { SERIES } from '../components/ExplorerCharts';
 import { useProjectCtx } from '../components/ProjectContext';
@@ -92,6 +93,7 @@ export default function LocationComparison() {
           </>
         }
       />
+      <ResearchProgress />
 
       <Callout tone="accent" icon={<Info className="h-4 w-4 text-accent-ink" />} title="Planning index, not a forecast; coverage is completeness, not confidence." className="mb-6">
         Indices are rank-based (0–1) application planning indices over the weight that has evidence. An incomplete index shows its available weight and is not directly comparable with a complete one.

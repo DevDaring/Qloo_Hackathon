@@ -12,6 +12,9 @@ export interface ProjectCtx {
   openDecision: (runId?: string) => void;
   consoleRunId?: string;
   setConsoleRunId: (id?: string) => void;
+  /** whether the run console is expanded (shared so any button can open it) */
+  consoleOpen: boolean;
+  setConsoleOpen: (open: boolean | ((o: boolean) => boolean)) => void;
   /** the user's working context, shared by every project page (persisted per project for the session) */
   sel: Selection;
   setSel: (patch: Partial<Selection>) => void;
