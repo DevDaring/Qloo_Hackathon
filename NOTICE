@@ -1,0 +1,6 @@
+LaunchLens — third-party notices
+
+Third-party components keep their own licenses: Noto fonts (SIL OFL 1.1, see
+assets/fonts), npm and PyPI dependencies (see lockfiles). Data returned by
+providers (Qloo, OpenStreetMap/ODbL, Open-Meteo/CC BY 4.0, xAI, OpenAI) and
+user-uploaded assets are not covered by this license.

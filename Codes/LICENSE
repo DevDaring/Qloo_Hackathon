@@ -19,8 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-Third-party components keep their own licenses: Noto fonts (SIL OFL 1.1, see
-assets/fonts), npm and PyPI dependencies (see lockfiles). Data returned by
-providers (Qloo, OpenStreetMap/ODbL, Open-Meteo/CC BY 4.0, xAI, OpenAI) and
-user-uploaded assets are not covered by this license.
