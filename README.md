@@ -9,17 +9,22 @@ and its audiences, and LaunchLens does the following:
 - Ranks locations without letting taste override hard constraints.
 - Shortlists venues and partners to approach.
 - Writes evidence-linked launch strategies.
-- Produces audience-specific flyers and video ads in English, Hindi and Bengali.
+- Produces audience-specific flyers and video ads in English, Spanish, Hindi and Bengali.
 
 Every recommendation shows the evidence behind it, and unknown data stays visibly unknown.
 
 - **Live demo:** https://launchlens.koushikdeb.com
 - **Jury login:** username `TestUser`, password `TestUser11` (shown on the sign-in page as well).
 
-The jury workspace contains a labelled sample project, a connected power wheelchair with a seat-back fan, with
-synthetic product facts. It has real recorded research (OpenStreetMap, ERA5 climate, live Qloo), strategies,
-Bengali, Hindi and English flyers, and real xAI-generated video ads. Live generation in that workspace is capped
-per day.
+The jury workspace contains two labelled, read-only sample projects with synthetic product facts:
+
+- **United States sample — Pulse Go portable speaker:** Phoenix, New York and Houston (Houston is outside
+  launch-partner coverage); English and Spanish ads; record stores, music venues, cafés and campuses as partners.
+- **India sample — Breeze IoT power wheelchair:** Kolkata, New Delhi and Chennai (Chennai is outside service
+  coverage); Bengali, Hindi and English ads.
+
+Both have real recorded research (OpenStreetMap, ERA5 climate, live Qloo), strategies, flyers and generated video
+ads. Use **Duplicate to edit** to change anything. Live generation in that workspace is capped per day.
 
 ---
 
@@ -60,9 +65,9 @@ footfall, purchase probability or a disability signal. Raw Qloo responses stay s
   - Audience-specific briefs.
   - Translation by Sarvam AI with brand names protected; every translation carries a back-translation and needs
     review.
-  - Flyers: an xAI background, the real product photo composited, and deterministic typography (Indic shaping
+  - Flyers: a Grok Imagine background (via NanoGPT), the real product photo composited, and deterministic typography (Indic shaping
     with libraqm) in 1080×1080, 1080×1350 and 1080×1920.
-  - Videos: an xAI image-to-video storyboard assembled with FFmpeg into 15–20 s vertical and landscape MP4s, with
+  - Videos: a Grok Imagine image-to-video storyboard (via NanoGPT) assembled with FFmpeg into 15–20 s vertical and landscape MP4s, with
     burned-in captions, the real-product end card and optional narration that needs review (Sarvam Bulbul for
     hi/bn).
   - A vision fidelity gate rejects generated imagery that shows things it must not before any video money is
@@ -90,7 +95,7 @@ Nothing is bought, published or sent automatically.
 React + TypeScript (Vite, MapLibre GL 5, Recharts, Framer Motion)
         │  cookie session · /api/v1 · Server-Sent Events
 FastAPI (Python 3.12, Pydantic) ──── PostgreSQL 16 + PostGIS ──── Durable worker (LangGraph, PostgreSQL job queue)
-                                     • app tables (Alembic)        • Qloo · OpenAI/xAI Grok reasoning · xAI Grok Imagine
+                                     • app tables (Alembic)        • Qloo · OpenAI/xAI Grok reasoning · Grok Imagine via NanoGPT
                                      • LangGraph checkpoints       • Sarvam AI · Fish Audio · OpenStreetMap · Open-Meteo
                                      • provider cache, cost ledger • Pillow composition · FFmpeg assembly
 ```
@@ -101,8 +106,8 @@ FastAPI (Python 3.12, Pydantic) ──── PostgreSQL 16 + PostGIS ───�
 | Backend | FastAPI, SQLAlchemy 2 (asyncpg), Alembic, GeoAlchemy2/PostGIS |
 | Agent workflow | LangGraph with the PostgreSQL checkpointer (schema `langgraph`), interrupts for human decisions |
 | Taste intelligence | Qloo Insights API (hackathon environment) |
-| Reasoning | OpenAI `gpt-4.1-mini` (primary) with an explicit fallback to xAI Grok `grok-4.20-0309-non-reasoning` |
-| Images and video | xAI Grok Imagine (`grok-imagine-image`, `grok-imagine-video`) |
+| Reasoning | `openai/gpt-4.1-mini` through **NanoGPT** (primary key, then fallback key); OpenAI direct and xAI Grok remain configurable |
+| Images and video | Grok Imagine (`grok-imagine-image`, `grok-imagine-video`) through **NanoGPT**, with a primary and a fallback key; direct xAI only as a last resort |
 | Indian languages | Sarvam AI (Mayura translation, Bulbul v3 narration); Fish Audio and fal as narration fallbacks |
 | Practical data | OpenStreetMap via Overpass (places), Nominatim (geocoding), Open-Meteo ERA5 archive (climate), OpenFreeMap tiles, NASA Blue/Black Marble imagery (landing globe) |
 | Jobs | PostgreSQL jobs with atomic `SKIP LOCKED` claims, leases, heartbeats, idempotency keys and deadlines |
@@ -131,7 +136,7 @@ Codes/
   backend/        FastAPI app and worker code (launchlens/), Alembic migrations, tests
     launchlens/api/        REST routes (/api/v1), schemas, ownership checks
     launchlens/graph/      LangGraph workflow and Postgres checkpointer
-    launchlens/providers/  qloo, llm (OpenAI/OpenRouter/xAI), xai media, sarvam, voice, geo
+    launchlens/providers/  qloo, llm (OpenAI/OpenRouter/xAI), nanogpt + media router, xai, sarvam, voice, geo
     launchlens/services/   evidence, scoring, research, strategy, creative, compose, video,
                            production, exporter, costs, jobs, revisions, hashing, cache
     launchlens/worker/     durable job worker

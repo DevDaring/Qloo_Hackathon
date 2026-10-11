@@ -73,7 +73,7 @@ class Settings(BaseSettings):
     OPENROUTER_MODEL: str = "openai/gpt-4.1-mini"
     OPENROUTER_PROVIDER_ALLOWLIST: str = ""
     OPENROUTER_DATA_POLICY: str = "deny"
-    LLM_PRIMARY_PROVIDER: str = "openai"
+    LLM_PRIMARY_PROVIDER: str = "nanogpt"  # owner's choice 2026-10-11: OpenAI and xAI accounts had no credits
     LLM_FALLBACK_PROVIDER: str = "openrouter"
     LLM_ALLOW_FALLBACK: bool = False
 
@@ -84,6 +84,17 @@ class Settings(BaseSettings):
     XAI_IMAGE_MODEL: str = "grok-imagine-image"
     XAI_VIDEO_MODEL: str = "grok-imagine-video"
     XAI_VIDEO_RESOLUTION: str = "720p"
+    # Image and video generation go through NanoGPT (same Grok Imagine models) with a primary
+    # and a fallback key; direct xAI is the last resort only when MEDIA_XAI_FALLBACK is true.
+    MEDIA_PROVIDER: str = "nanogpt"  # nanogpt | xai
+    NANOGPT_API_KEY: str = Field(default="", validation_alias=_alias("NANOGPT_API_KEY", "NanoGPT_88_API_Key"))
+    NANOGPT_FALLBACK_API_KEY: str = Field(default="", validation_alias=_alias(
+        "NANOGPT_FALLBACK_API_KEY", "NanoGPT_2009_API_KEY", "Nano_GPT_API_KEY"))
+    NANOGPT_BASE_URL: str = "https://nano-gpt.com/api"
+    NANOGPT_IMAGE_MODEL: str = "grok-imagine-image"
+    NANOGPT_VIDEO_MODEL: str = "grok-imagine-video"
+    NANOGPT_TEXT_MODEL: str = "openai/gpt-4.1-mini"  # reasoning via NanoGPT (strict JSON output verified)
+    MEDIA_XAI_FALLBACK: bool = True
     XAI_POLL_INTERVAL_SECONDS: float = 5.0
     XAI_JOB_TIMEOUT_SECONDS: float = 900.0
 
@@ -181,12 +192,13 @@ class Settings(BaseSettings):
             "mapPublicToken": self.MAP_PUBLIC_TOKEN,
             "demoMode": self.DEMO_MODE,
             "maxUploadMb": self.MAX_UPLOAD_MB,
-            "languages": ["en", "hi", "bn"],
+            "languages": ["en", "hi", "bn", "es"],
         }
 
     def secret_values(self) -> list[str]:
         """Every configured secret, for redaction. Never logged or returned."""
         vals = [self.QLOO_API_KEY, self.OPENAI_API_KEY, self.OPENROUTER_API_KEY, self.XAI_API_KEY,
+                self.NANOGPT_API_KEY, self.NANOGPT_FALLBACK_API_KEY,
                 self.TTS_API_KEY, self.FAL_KEY, self.SARVAM_API_KEY, self.GEOCODING_API_KEY, self.PLACES_API_KEY,
                 self.WEATHER_API_KEY, self.S3_SECRET_ACCESS_KEY, self.S3_ACCESS_KEY_ID, self.AUTH_SECRET]
         db_pw = _db_password(self.DATABASE_URL)

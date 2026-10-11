@@ -7,6 +7,7 @@ import { ApiError } from '../api/client';
 import { mutations } from '../api/hooks';
 import { IndiaMap } from '../components/IndiaMap';
 import { Logo } from '../components/Logo';
+import { ThemeToggle } from '../components/ThemeToggle';
 import { Button, CopyButton, Field, Input } from '../components/ui';
 
 const JURY = { username: 'TestUser', password: 'TestUser11' };
@@ -56,7 +57,7 @@ export default function Login() {
   };
 
   return (
-    <div className="grid min-h-screen overflow-x-hidden bg-bg lg:grid-cols-[1.05fr_1fr]">
+    <div className="page-canvas relative grid min-h-screen overflow-x-hidden lg:grid-cols-[1.05fr_1fr]">
       {/* brand panel */}
       <div className="relative hidden overflow-hidden bg-[#0E1320] text-white lg:block">
         <div aria-hidden className="absolute inset-0">
@@ -86,6 +87,7 @@ export default function Login() {
         <div aria-hidden className="pointer-events-none absolute inset-0 lg:hidden">
           <div className="absolute -right-20 -top-20 h-72 w-72 rounded-full bg-[#FF7A45]/20 blur-[90px]" />
         </div>
+        <ThemeToggle className="absolute right-4 top-4 z-10 sm:right-6 sm:top-6" />
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }} className="relative w-full max-w-[420px]">
           <div className="mb-8 lg:hidden">
             <Link to="/">

@@ -298,8 +298,8 @@ function CreativeScope({ pid, runId, onDone }: { pid: string; runId: string; onD
   return (
     <div className="space-y-5">
       <Callout tone="brand" icon={<CircleDollarSign className="h-4 w-4 text-brand-ink" />} title="This step can spend real money">
-        Images and video are generated through xAI and billed to the configured account. Nothing is generated until you approve. The cap is enforced by the worker;
-        estimates come from the versioned pricing file ({pd?.estimates?.pricing_source || 'source unknown'}) and actual cost is recorded from xAI usage.
+        Images and video are generated with Grok Imagine through NanoGPT and billed to the configured account. Nothing is generated until you approve. The cap is enforced by the worker;
+        estimates come from the versioned pricing file ({pd?.estimates?.pricing_source || 'source unknown'}) and actual cost is recorded from the provider where it reports one.
       </Callout>
 
       <div>
@@ -347,8 +347,8 @@ function CreativeScope({ pid, runId, onDone }: { pid: string; runId: string; onD
             <div className="grid gap-2 sm:grid-cols-3">
               {(
                 [
-                  ['full', 'Full xAI video', 'Real generated clips + assembly'],
-                  ['animatic', 'Animatic draft', 'Stills only — NOT xAI video'],
+                  ['full', 'Full generated video', 'Real generated clips + assembly'],
+                  ['animatic', 'Animatic draft', 'Stills only — NOT generated video'],
                   ['none', 'No video', 'Flyers only'],
                 ] as const
               ).map(([k, l, s]) => (
@@ -393,7 +393,7 @@ function CreativeScope({ pid, runId, onDone }: { pid: string; runId: string; onD
           {total !== null && capOk && total > capNum && (
             <Callout tone="warn">The estimate exceeds your cap — generation will stop when the cap is reached; some items may not be produced.</Callout>
           )}
-          <Checkbox checked={ack} onChange={setAck} label={<span className="text-[13px]">I understand this may spend up to <b>{capOk ? fmtUsd(capNum) : 'the cap'}</b> on xAI.</span>} />
+          <Checkbox checked={ack} onChange={setAck} label={<span className="text-[13px]">I understand this may spend up to <b>{capOk ? fmtUsd(capNum) : 'the cap'}</b> on image and video generation.</span>} />
         </div>
       </div>
       <div className="sticky bottom-0 -mx-6 -mb-5 flex flex-wrap items-center justify-end gap-2 border-t border-line bg-surface/95 px-6 py-3 backdrop-blur">

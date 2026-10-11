@@ -23,6 +23,7 @@ from ..models import (
 from ..providers import geo, qloo
 from ..providers.base import ProviderError
 from . import context as ctxsvc
+from . import profiles
 from . import evidence as ev
 from . import scoring
 
@@ -199,7 +200,8 @@ async def geographic_research(run_id: uuid.UUID, project_id: uuid.UUID, area: di
     places_rows: list[Place] = []
     summary = {"area_id": area["area_id"], "places": 0, "climate": False}
     try:
-        places, meta = await geo.osm_places(area["lat"], area["lon"], int(area["radius_m"]))
+        prof = profiles.for_product(product)
+        places, meta = await geo.osm_places(area["lat"], area["lon"], int(area["radius_m"]), profile=prof)
         counts: dict[str, int] = {}
         for p in places:
             counts[p["category"]] = counts.get(p["category"], 0) + 1
@@ -227,13 +229,15 @@ async def geographic_research(run_id: uuid.UUID, project_id: uuid.UUID, area: di
                               title=f"Place data unavailable for {area['name']}", statement=e.message,
                               source="osm-overpass", limitations="Partner, venue and competitor components are missing."))
     try:
+        prof = profiles.for_product(product)
+        cl = prof.climate
         clim, meta = await geo.climate_summary(area["lat"], area["lon"])
         e_clim = ev.new(project_id, kind="observed_fact", topic="climate", run_id=run_id, area_id=aid,
-                        title=f"{area['name']}: {clim['hot_days_per_year_tmax_ge_35c']} days/yr with max ≥ 35 °C",
+                        title=cl.title.format(area=area["name"], value=clim[cl.metric]),
                         statement=(f"Mean daily maximum in the hottest month: {clim['hottest_month_mean_max_c']} °C. "
                                    f"Average {clim['days_per_year_apparent_ge_40c']} days/yr with apparent maximum ≥ 40 °C."),
-                        source=meta["source"], source_ref=meta["source_ref"], value=clim["hot_days_per_year_tmax_ge_35c"],
-                        units="days/year", period=clim["period"], retrieved_at=meta["retrieved_at"],
+                        source=meta["source"], source_ref=meta["source_ref"], value=clim[cl.metric],
+                        units=cl.units, period=clim["period"], retrieved_at=meta["retrieved_at"],
                         scope={"lat": area["lat"], "lon": area["lon"], "monthly_mean_daily_max_c": clim["monthly_mean_daily_max_c"]},
                         limitations="Historical reanalysis (ERA5), grid-cell scale, 2023–2025. Not a forecast, not a station "
                                     "observation, and says nothing about demand or medical need.",
@@ -241,15 +245,13 @@ async def geographic_research(run_id: uuid.UUID, project_id: uuid.UUID, area: di
         records.append(e_clim)
         summary["climate"] = True
         summary["hot_days"] = clim["hot_days_per_year_tmax_ge_35c"]
-        fan = next((f for f in product.get("features", []) if f["key"] == "fan" and f["enabled"]), None)
-        if fan:
+        feat = next((f for f in product.get("features", []) if f["key"] == cl.feature_key and f["enabled"]), None)
+        if feat:
             records.append(ev.new(project_id, kind="hypothesis", topic="feature_relevance", run_id=run_id, area_id=aid,
-                                  title=f"Fan feature may be relevant in {area['name']}'s hot season",
-                                  statement=("Frequent hot days suggest the built-in fan could be a relevant message here. "
-                                             "This is a feature-relevance hypothesis to test, not proof of comfort benefit, "
-                                             "medical effectiveness or buyer demand."),
-                                  source="LaunchLens derived", formula="hot_days_per_year_tmax_ge_35c (rank across candidates)",
-                                  inputs=[e_clim.id], value=clim["hot_days_per_year_tmax_ge_35c"], units="days/year"))
+                                  title=cl.hyp_title.format(area=area["name"]), statement=cl.hyp_statement,
+                                  source="LaunchLens derived", formula=f"{cl.metric} (rank across candidates)",
+                                  inputs=[e_clim.id], value=clim[cl.metric], units=cl.units,
+                                  scope={"feature_key": cl.feature_key, "profile": prof.key}))
     except ProviderError as e:
         records.append(ev.new(project_id, kind="data_gap", topic="climate", run_id=run_id, area_id=aid,
                               title=f"Climate data unavailable for {area['name']}", statement=e.message, source="open-meteo"))
@@ -274,19 +276,7 @@ async def geographic_research(run_id: uuid.UUID, project_id: uuid.UUID, area: di
 
 # ---------------------------------------------------------------- taste ------
 # Qloo place-category tags (verified with /v2/tags on 2026-10-09) -> (app category, role)
-QLOO_PARTNER_TAGS: dict[str, tuple[str, str]] = {
-    "urn:tag:category:place:pharmacy": ("pharmacy", "partner"),
-    "urn:tag:category:place:hospital": ("hospital", "institution"),
-    "urn:tag:category:place:medical_clinic": ("clinic", "institution"),
-    "urn:tag:category:place:shopping_mall": ("shopping_mall", "venue"),
-    "urn:tag:category:place:community_center": ("community_centre", "venue"),
-    "urn:tag:category:place:senior_citizen_center": ("social_facility", "institution"),
-    "urn:tag:category:place:nursing_home": ("social_facility", "institution"),
-    "urn:tag:category:place:physical_therapist": ("physiotherapy", "partner"),
-    "urn:tag:category:place:medical_supply_store": ("medical_supply_store", "competitor"),
-    "urn:tag:category:place:mobility_equipment_supplier": ("mobility_store", "competitor"),
-    "urn:tag:category:place:electronics_store": ("electronics_store", "partner"),
-}
+QLOO_PARTNER_TAGS: dict[str, tuple[str, str]] = profiles.MOBILITY.qloo_tags  # default profile
 LIFT_MIN_BASELINE = 5      # baseline results an area needs before its taste share means anything
 COMMON_PAGES, COMMON_TAKE = 3, 50
 
@@ -424,7 +414,8 @@ async def common_taste(run_id: uuid.UUID, project_id: uuid.UUID, areas: list[dic
 
 
 async def taste_analysis(run_id: uuid.UUID, project_id: uuid.UUID, area: dict, audiences: list[dict],
-                         budget: qloo.CallBudget, qloo_enabled: bool, entities: list[dict] | None = None) -> dict:
+                         budget: qloo.CallBudget, qloo_enabled: bool, entities: list[dict] | None = None,
+                         profile: profiles.Profile | None = None) -> dict:
     """Venue-level Qloo recommendations WITHIN one area (explanations included).
     These rank places inside the city; they are not used to compare cities."""
     aid = uuid.UUID(area["area_id"])
@@ -435,6 +426,7 @@ async def taste_analysis(run_id: uuid.UUID, project_id: uuid.UUID, area: dict, a
                          statement="Experiment condition: taste signals withheld; practical evidence is identical.",
                          source="LaunchLens experiment", status="unknown"))
         return {"area_id": area["area_id"], "state": "disabled_by_experiment", "by_audience": {}}
+    partner_tags = (profile or profiles.MOBILITY).qloo_tags
     if not qloo.configured():
         async with session_scope() as s:
             s.add(ev.new(project_id, kind="data_gap", topic="taste", run_id=run_id, area_id=aid,
@@ -492,14 +484,14 @@ async def taste_analysis(run_id: uuid.UUID, project_id: uuid.UUID, area: dict, a
                                       for r in top]}
         try:
             partners, pmeta = await qloo.places_near(area["lat"], area["lon"], int(area["radius_m"]), entity_ids=ents,
-                                                     tag_ids=tags, filter_tags=list(QLOO_PARTNER_TAGS), take=40,
+                                                     tag_ids=tags, filter_tags=list(partner_tags), take=40,
                                                      budget=budget, context={"audience_hash": a["hash"],
                                                                              "area": area["area_id"], "partners": 1})
         except ProviderError as e2:
             partners, pmeta = [], {"error": e2.message}
         kept = 0
         for r in partners:
-            cat = next((QLOO_PARTNER_TAGS[t["id"]] for t in (r.get("tags") or []) if t.get("id") in QLOO_PARTNER_TAGS), None)
+            cat = next((partner_tags[t["id"]] for t in (r.get("tags") or []) if t.get("id") in partner_tags), None)
             if not cat or r.get("lat") is None or r.get("lon") is None or not r.get("qloo_id"):
                 continue
             entry = qloo_places.setdefault(r["qloo_id"], {**r, "category": cat[0], "role": cat[1],
@@ -512,13 +504,13 @@ async def taste_analysis(run_id: uuid.UUID, project_id: uuid.UUID, area: dict, a
             records.append(ev.new(project_id, kind="provider_signal", topic="taste_partners", run_id=run_id, area_id=aid,
                                   audience_version_id=uuid.UUID(a["id"]),
                                   title=f"Qloo: {kept} partner-type places in {area['name']} ranked for {a['name']}",
-                                  statement=("Pharmacies, hospitals, malls, community/senior centres, physiotherapists and "
-                                             "mobility/medical suppliers returned by Qloo for these taste signals: "
+                                  statement=("Partner-type places (category tags for this product) returned by Qloo for "
+                                             "these taste signals: "
                                              + ", ".join(f"{q['name']} ({q['affinity']:.2f})" for q in ranked[:6]))
                                   if partners else pmeta.get("empty_note", ""),
                                   source="Qloo Insights API", source_ref=f"{settings.QLOO_BASE_URL}/v2/insights (filter.tags=place categories)",
                                   value=kept, units="places (retrieved set)", retrieved_at=pmeta.get("retrieved_at"),
-                                  scope={"radius_m": int(area["radius_m"]), "filter_tags": list(QLOO_PARTNER_TAGS), "take": 40,
+                                  scope={"radius_m": int(area["radius_m"]), "filter_tags": list(partner_tags), "take": 40,
                                          "query_hash": pmeta.get("query_hash")},
                                   limitations="Affinity ranks taste relevance only; it does not establish willingness to "
                                               "collaborate, footfall or ad availability. Retrieved set, not a census.",
@@ -532,7 +524,7 @@ async def taste_analysis(run_id: uuid.UUID, project_id: uuid.UUID, area: dict, a
             s.add(Place(id=uuid.uuid4(), project_id=project_id, run_id=run_id, area_id=aid, provider="qloo",
                         provider_id=q["qloo_id"], name=(q["name"] or "")[:300], category=q["category"], role=q["role"],
                         role_basis="inferred_category", provider_categories=[t.get("id") for t in (q.get("tags") or [])
-                                                                             if t.get("id") in QLOO_PARTNER_TAGS],
+                                                                             if t.get("id") in partner_tags],
                         address=q.get("address") or "", geom=from_shape(Point(q["lon"], q["lat"]), srid=4326),
                         distance_m=Decimal(str(round(geo.haversine_m(area["lat"], area["lon"], q["lat"], q["lon"]), 1))),
                         accessibility="unknown", qloo_entity_id=q["qloo_id"], retrieved_at=now,
@@ -631,7 +623,8 @@ async def evaluate(run_id: uuid.UUID, project_id: uuid.UUID, areas: list[dict], 
         if e_clim:
             c.topics_present.add("climate")
             c.raw["feature_relevance"] = float(e_clim.value_numeric)
-            c.raw_meta["feature_relevance"] = {"units": "hot days/year (hypothesis input)", "evidence_ids": [str(e_clim.id)]}
+            c.raw_meta["feature_relevance"] = {"units": f"{e_clim.units} (hypothesis input: {e_clim.title.split(': ', 1)[-1]})",
+                                               "evidence_ids": [str(e_clim.id)]}
         cm = (common or {}).get(aid) or {}
         by_a = cm.get("by_audience") or {}
         c.raw_meta["cultural_fit"] = {
@@ -683,28 +676,9 @@ def _assessment_hash(r: dict) -> str:
 
 
 # ---------------------------------------------------------------- placements -
-ROLE_FIT = {
-    "product_user": {"community_centre": 1.0, "shopping_mall": 0.9, "physiotherapy": 0.9, "pharmacy": 0.7,
-                     "social_facility": 0.6, "medical_supply_store": 0.6, "hospital": 0.4, "clinic": 0.4},
-    "purchaser": {"pharmacy": 1.0, "shopping_mall": 0.9, "community_centre": 0.8, "medical_supply_store": 0.8,
-                  "physiotherapy": 0.7, "electronics_store": 0.5, "hospital": 0.4, "clinic": 0.4},
-    "institutional_buyer": {"hospital": 1.0, "clinic": 0.9, "social_facility": 1.0, "physiotherapy": 0.7},
-    "distribution_partner": {"medical_supply_store": 1.0, "mobility_store": 1.0, "pharmacy": 0.8,
-                             "electronics_store": 0.6},
-}
-ACTIVATION = {
-    "community_centre": ("physical_venue", "demonstration"), "shopping_mall": ("physical_venue", "demonstration"),
-    "physiotherapy": ("partner_business", "partnership_flyer"), "pharmacy": ("partner_business", "counter_display"),
-    "medical_supply_store": ("retail_distributor", "counter_display"), "mobility_store": ("retail_distributor", "counter_display"),
-    "electronics_store": ("retail_distributor", "counter_display"), "hospital": ("partner_business", "demonstration"),
-    "clinic": ("partner_business", "partnership_flyer"), "social_facility": ("partner_business", "demonstration"),
-}
-NEXT_ACTION = {
-    "physical_venue": "Contact the venue manager to ask whether product demonstrations are permitted, on which dates, and at what cost.",
-    "partner_business": "Visit or call to ask whether they accept partner flyers or a demo session; confirm decision-maker and terms.",
-    "retail_distributor": "Ask whether they stock mobility products from new brands and on what margin/terms.",
-    "digital_geo": "Confirm the ad platform's geo-targeting options and minimum spend for this area before committing budget.",
-}
+ROLE_FIT = profiles.MOBILITY.role_fit          # defaults; each run uses its product's profile
+ACTIVATION = profiles.MOBILITY.activation
+NEXT_ACTION = profiles.MOBILITY.next_action
 
 
 def _name_key(n: str) -> str:
@@ -712,7 +686,8 @@ def _name_key(n: str) -> str:
 
 
 async def placement_research(run_id: uuid.UUID, project_id: uuid.UUID, area: dict, audiences: list[dict],
-                             taste: dict) -> int:
+                             taste: dict, profile: profiles.Profile | None = None) -> int:
+    prof = profile or profiles.MOBILITY
     aid = uuid.UUID(area["area_id"])
     async with session_scope() as s:
         if (await s.execute(select(PlacementCandidate.id).where(PlacementCandidate.run_id == run_id,
@@ -725,7 +700,7 @@ async def placement_research(run_id: uuid.UUID, project_id: uuid.UUID, area: dic
     created = 0
     async with session_scope() as s:
         for a in audiences:
-            fit = ROLE_FIT.get(a["role"], ROLE_FIT["purchaser"])
+            fit = prof.role_fit.get(a["role"], prof.role_fit["purchaser"])
             qplaces = ((taste.get(area["area_id"]) or {}).get("by_audience") or {}).get(a["id"], {}).get("places") or []
             qindex = {_name_key(q["name"]): q for q in qplaces}
             scored = []
@@ -757,7 +732,7 @@ async def placement_research(run_id: uuid.UUID, project_id: uuid.UUID, area: dic
                 x[0] = 0.45 * x[2]["category_fit"] + 0.25 * x[2]["proximity"] + (0.30 * ar if ar is not None else 0.0)
             scored.sort(key=lambda x: -x[0])
             for score_val, p, parts, q in scored[:8]:
-                channel, activation = ACTIVATION.get(p.category, ("partner_business", "partnership_flyer"))
+                channel, activation = prof.activation.get(p.category, ("partner_business", "partnership_flyer"))
                 pt = to_shape(p.geom)
                 s.add(PlacementCandidate(
                     project_id=project_id, run_id=run_id, area_id=aid, place_id=p.id, audience_version_id=uuid.UUID(a["id"]),
@@ -774,7 +749,7 @@ async def placement_research(run_id: uuid.UUID, project_id: uuid.UUID, area: dic
                     practical_evidence_ids=[str(place_ev)] if place_ev else [], activation=activation,
                     accessibility="unknown" if not p.accessibility.startswith("osm_reported") else p.accessibility,
                     verification={k: "unknown" for k in ("availability", "permission", "contact", "cost", "dates")},
-                    status="availability_unknown", next_action=NEXT_ACTION[channel],
+                    status="availability_unknown", next_action=prof.next_action[channel],
                     evidence_needed="Written confirmation of permission, dates, cost and contact person.",
                     suitability_score=Decimal(str(round(score_val, 4)))))
                 created += 1
@@ -785,7 +760,7 @@ async def placement_research(run_id: uuid.UUID, project_id: uuid.UUID, area: dic
                 relationship_note=f"Broad digital reach in {area['name']} for {a['name']}; targeting must not use health or disability attributes.",
                 qloo_relevance={"state": "not_applicable"}, accessibility="not_applicable",
                 verification={k: "unknown" for k in ("availability", "permission", "contact", "cost", "dates")},
-                status="candidate", next_action=NEXT_ACTION["digital_geo"],
+                status="candidate", next_action=prof.next_action["digital_geo"],
                 evidence_needed="Platform reach estimate and minimum spend for the chosen radius.",
                 suitability_score=Decimal("0.5")))
             created += 1

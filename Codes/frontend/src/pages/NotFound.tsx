@@ -5,7 +5,7 @@ import { Logo } from '../components/Logo';
 
 export default function NotFound() {
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-bg px-6 text-center">
+    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden page-canvas px-6 text-center">
       <div aria-hidden className="absolute -top-32 left-1/3 h-96 w-96 animate-mesh rounded-full bg-[#FF7A45]/20 blur-[110px]" />
       <div aria-hidden className="absolute -bottom-32 right-1/3 h-96 w-96 animate-mesh rounded-full bg-[#1F6FEB]/20 blur-[110px]" />
       <Logo className="relative mb-10" />

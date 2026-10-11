@@ -1,5 +1,7 @@
-"""Reasoning provider: OpenAI (required) with an optional, explicitly enabled
-fallback: xAI Grok (owner's choice, same key as media) or OpenRouter.
+"""Reasoning provider: NanoGPT (`openai/gpt-4.1-mini`, primary key then the
+fallback key; owner's choice after the OpenAI and xAI accounts ran out of
+credit) or OpenAI directly, with an optional, explicitly enabled fallback:
+xAI Grok or OpenRouter.
 
 Every structured call is validated against a Pydantic schema; one repair round
 is allowed, then the call fails. The fallback is used only for transient or
@@ -47,12 +49,17 @@ class Usage:
 
 def _providers() -> list[tuple[str, str, str, str]]:
     """(name, base_url, key, model) in priority order, configured ones only."""
+    nano = settings.NANOGPT_BASE_URL.rstrip("/") + "/v1"
     table = {
+        "nanogpt": (nano, settings.NANOGPT_API_KEY, settings.NANOGPT_TEXT_MODEL),
+        "nanogpt_backup": (nano, settings.NANOGPT_FALLBACK_API_KEY, settings.NANOGPT_TEXT_MODEL),
         "openai": (settings.OPENAI_BASE_URL, settings.OPENAI_API_KEY, settings.OPENAI_MODEL),
         "openrouter": (settings.OPENROUTER_BASE_URL, settings.OPENROUTER_API_KEY, settings.OPENROUTER_MODEL),
         "xai": (settings.XAI_BASE_URL, settings.XAI_API_KEY, settings.XAI_TEXT_MODEL),
     }
     order = [settings.LLM_PRIMARY_PROVIDER]
+    if settings.LLM_PRIMARY_PROVIDER == "nanogpt" and settings.NANOGPT_FALLBACK_API_KEY != settings.NANOGPT_API_KEY:
+        order.append("nanogpt_backup")  # same provider and data policy, second key
     if settings.LLM_ALLOW_FALLBACK and settings.LLM_FALLBACK_PROVIDER not in order:
         order.append(settings.LLM_FALLBACK_PROVIDER)
     return [(n, *table[n]) for n in order if n in table and table[n][1]]
@@ -166,9 +173,37 @@ async def structured(schema: type[T], system: str, user: str, *, usage: Usage | 
                      {"role": "user", "content": f"That JSON failed validation: {str(e)[:800]}. Return corrected JSON only."}]
         text, model = await chat(messages, usage=usage, temperature=0.0, max_tokens=max_tokens)
         try:
-            return schema.model_validate(_extract_json(text)), model
-        except (ValidationError, json.JSONDecodeError, ValueError) as e2:
+            data = _extract_json(text)
+            return schema.model_validate(data), model
+        except ValidationError as e2:
+            fixed = _trim_overlong(data, e2)
+            if fixed is not None:
+                try:
+                    return schema.model_validate(fixed), model
+                except ValidationError:
+                    pass
             raise ProviderError(model.split("/")[0], "failed", f"model output failed schema validation: {str(e2)[:300]}") from None
+        except (json.JSONDecodeError, ValueError) as e2:
+            raise ProviderError(model.split("/")[0], "failed", f"model output failed schema validation: {str(e2)[:300]}") from None
+
+
+def _trim_overlong(data, err: ValidationError):
+    """Last resort after the repair round: if the ONLY problems are strings over
+    their maximum length, cut each at a word boundary. Anything else fails."""
+    errs = err.errors()
+    if not errs or any(e.get("type") != "string_too_long" for e in errs):
+        return None
+    import copy
+    out = copy.deepcopy(data)
+    for e in errs:
+        limit = int((e.get("ctx") or {}).get("max_length") or 0)
+        node = out
+        for k in e["loc"][:-1]:
+            node = node[k]
+        val = node[e["loc"][-1]]
+        cut = val[:limit].rsplit(" ", 1)[0].rstrip(" ,;:-—") if " " in val[:limit] else val[:limit]
+        node[e["loc"][-1]] = cut
+    return out
 
 
 def cost_of(usage: Usage) -> Decimal | None:

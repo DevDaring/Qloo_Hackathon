@@ -39,7 +39,8 @@ async def product_changed(project_id: uuid.UUID, user_id, before: dict, after: d
                            {f["key"] for f in after.get("features", []) for g in before.get("features", [])
                             if f["key"] == g["key"] and (f["enabled"] != g["enabled"] or f["proposed_benefit"] != g["proposed_benefit"])})
     reason = "Product facts changed" + (f" (features: {', '.join(changed_feats)})" if changed_feats else "")
-    scoring_relevant = "fan" in changed_feats
+    from . import profiles
+    scoring_relevant = profiles.for_product(after).climate.feature_key in changed_feats
     async with session_scope() as s:
         svs = (await s.execute(select(StrategyVersion).where(StrategyVersion.project_id == project_id,
                                                              StrategyVersion.product_version_id == uuid.UUID(before["id"]),

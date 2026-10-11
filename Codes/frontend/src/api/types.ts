@@ -3,7 +3,7 @@
  * use the generated OpenAPI types in schema.d.ts (see client.ts `Schemas`). */
 
 export type ISO = string;
-export type Lang = 'en' | 'hi' | 'bn';
+export type Lang = 'en' | 'hi' | 'bn' | 'es';
 export type AudienceRole = 'product_user' | 'purchaser' | 'institutional_buyer' | 'distribution_partner';
 export type Preset = 'square' | 'portrait' | 'vertical';
 export type Orientation = 'vertical' | 'landscape';

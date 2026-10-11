@@ -36,7 +36,7 @@ export default function Projects() {
           </>
         }
       />
-      {items.some((p) => p.is_demo) && <JuryTour pid={items.find((p) => p.is_demo)!.id} />}
+      {items.some((p) => p.is_demo) && <JuryTour samples={items.filter((p) => p.is_demo)} />}
       {q.isLoading && (
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {[0, 1, 2].map((i) => (
@@ -271,8 +271,14 @@ function CreateProject({ open, onClose }: { open: boolean; onClose: () => void }
   );
 }
 
-function JuryTour({ pid }: { pid: string }) {
+const MARKET_LABEL: Record<string, string> = { US: 'United States', IN: 'India' };
+
+function JuryTour({ samples }: { samples: { id: string; country_code: string; name: string }[] }) {
   const me = useMe().data;
+  // US first: the judges are in the US; India stays one click away
+  const ordered = [...samples].sort((a, b) => (a.country_code === 'US' ? -1 : b.country_code === 'US' ? 1 : 0));
+  const [sel, setSel] = useState(ordered[0]?.id);
+  const pid = ordered.some((x) => x.id === sel) ? sel! : ordered[0].id;
   const steps = [
     { to: `/projects/${pid}`, icon: Sparkles, t: 'Overview', d: 'Run timeline & decisions' },
     { to: `/projects/${pid}/audiences#taste-story`, icon: Network, t: 'Why these places?', d: 'Interests → Qloo → placement → ad' },
@@ -293,7 +299,25 @@ function JuryTour({ pid }: { pid: string }) {
       <div className="relative">
         <p className="text-[12px] font-bold uppercase tracking-[0.16em] text-[#FFB088]">Welcome{me ? `, ${me.user.display_name}` : ''}</p>
         <div className="mt-2 flex flex-wrap items-center justify-between gap-4">
-          <h2 className="font-display text-2xl font-extrabold tracking-tight sm:text-3xl">A six-stop tour of the sample launch</h2>
+          <div>
+            <h2 className="font-display text-2xl font-extrabold tracking-tight sm:text-3xl">A six-stop tour of the sample launch</h2>
+            {ordered.length > 1 && (
+              <div role="radiogroup" aria-label="Sample market" className="mt-3 inline-flex rounded-xl border border-white/15 bg-white/[0.06] p-1">
+                {ordered.map((x) => (
+                  <button
+                    key={x.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={x.id === pid}
+                    onClick={() => setSel(x.id)}
+                    className={`min-h-[36px] rounded-lg px-3.5 text-[13px] font-semibold transition ${x.id === pid ? 'bg-white text-[#0E1320]' : 'text-white/70 hover:text-white'}`}
+                  >
+                    {MARKET_LABEL[x.country_code] ?? x.country_code} sample
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <Link
             to={`/projects/${pid}`}
             className="inline-flex h-12 items-center gap-2 rounded-xl bg-gradient-to-b from-[#FF8A5B] to-[#FF6A2F] px-5 text-[15px] font-semibold text-[#1A0E08] shadow-[0_14px_30px_-10px_rgb(255_106_47/0.75)] transition hover:brightness-105"
@@ -301,7 +325,7 @@ function JuryTour({ pid }: { pid: string }) {
             Open the sample project <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
-        <p className="mt-1.5 max-w-2xl text-sm text-white/65">Everything below is live data from the backend: research runs, evidence, strategies and real xAI flyers and videos. Synthetic product specs are labelled as such.</p>
+        <p className="mt-1.5 max-w-2xl text-sm text-white/65">Everything below is live data from the backend: research runs, evidence, strategies and real AI-generated flyers and videos. Synthetic product specs are labelled as such.</p>
         <ol className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
           {steps.map((s, i) => (
             <li key={s.t}>

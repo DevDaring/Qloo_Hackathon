@@ -229,7 +229,7 @@ async def reconcile_orphans() -> int:
     from sqlalchemy import select
 
     from ..models import ProviderAttempt
-    from ..providers import xai
+    from ..providers import media
     from ..services import assets as assetsvc
     from ..services import costs
     from ..security import fetch_media
@@ -240,14 +240,15 @@ async def reconcile_orphans() -> int:
             ProviderAttempt.remote_request_id.isnot(None), Job.status.in_(jobs.TERMINAL)))).all()
     for att, job in rows:
         try:
-            st = await xai.poll_video(att.remote_request_id)
+            st = await media.poll_video(att.remote_request_id)
         except ProviderError:
             continue
         ledger_id = (att.response_summary or {}).get("ledger_id")
         if st["state"] == "done":
             data, _ = await fetch_media(st["url"], 300_000_000, expected=("video/",))
             clip = await assetsvc.save(workspace_id=att.workspace_id, project_id=att.project_id, kind="video_clip", data=data,
-                                       mime="video/mp4", source="xai", label="xAI clip (collected after its job ended)",
+                                       mime="video/mp4", source=(att.response_summary or {}).get("served_by") or att.provider,
+                                       label="Generated clip (collected after its job ended)",
                                        provider_model=st.get("model") or att.model, remote_request_id=att.remote_request_id,
                                        input_hash=att.idempotency_key.split(":", 1)[-1][:64])
             await jobs.update_attempt(att.id, status="succeeded", cost_actual_usd=st.get("cost_usd"), output_asset_ids=[str(clip.id)])

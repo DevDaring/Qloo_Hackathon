@@ -8,7 +8,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-Lang = Literal["en", "hi", "bn"]
+Lang = Literal["en", "hi", "bn", "es"]
+# feature-emphasis angles: legacy names for the original sample, lead_<feature_key> for any product
+ANGLE_PATTERN = r"^(fan_comfort|speech_presence|institutional_brief|distributor_intro|lead_[a-z0-9_]{1,60})$"
 Role = Literal["product_user", "purchaser", "institutional_buyer", "distribution_partner"]
 Preset = Literal["square", "portrait", "vertical"]
 Orientation = Literal["vertical", "landscape"]
@@ -182,7 +184,7 @@ class BriefIn(BaseModel):
     language: Lang = "en"
     channel: Literal["social", "print", "stories"] = "social"
     objective: str = Field(default="inquiries", max_length=60)
-    angle: Literal["fan_comfort", "speech_presence", "institutional_brief", "distributor_intro"] | None = None
+    angle: str | None = Field(default=None, pattern=ANGLE_PATTERN)
 
 
 class BriefPatch(BaseModel):
@@ -201,7 +203,7 @@ class BriefPatch(BaseModel):
 class DuplicateIn(BaseModel):
     strategy_version_id: uuid.UUID
     language: Lang | None = None
-    angle: Literal["fan_comfort", "speech_presence", "institutional_brief", "distributor_intro"] | None = None
+    angle: str | None = Field(default=None, pattern=ANGLE_PATTERN)
 
 
 class Focus(BaseModel):

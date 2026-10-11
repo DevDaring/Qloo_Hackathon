@@ -4796,7 +4796,8 @@
        "enum": [
         "en",
         "hi",
-        "bn"
+        "bn",
+        "es"
        ]
       },
       "type": "array",
@@ -4871,7 +4872,8 @@
       "enum": [
        "en",
        "hi",
-       "bn"
+       "bn",
+       "es"
       ],
       "title": "Language",
       "default": "en"
@@ -4896,12 +4898,7 @@
       "anyOf": [
        {
         "type": "string",
-        "enum": [
-         "fan_comfort",
-         "speech_presence",
-         "institutional_brief",
-         "distributor_intro"
-        ]
+        "pattern": "^(fan_comfort|speech_presence|institutional_brief|distributor_intro|lead_[a-z0-9_]{1,60})$"
        },
        {
         "type": "null"
@@ -5312,7 +5309,8 @@
         "enum": [
          "en",
          "hi",
-         "bn"
+         "bn",
+         "es"
         ]
        },
        {
@@ -5325,12 +5323,7 @@
       "anyOf": [
        {
         "type": "string",
-        "enum": [
-         "fan_comfort",
-         "speech_presence",
-         "institutional_brief",
-         "distributor_intro"
-        ]
+        "pattern": "^(fan_comfort|speech_presence|institutional_brief|distributor_intro|lead_[a-z0-9_]{1,60})$"
        },
        {
         "type": "null"

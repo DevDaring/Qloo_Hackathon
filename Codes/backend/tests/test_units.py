@@ -189,3 +189,56 @@ def test_plain_status_has_no_config_names_and_reports_backup():
     assert out["media"]["state"] == "not_set_up" and out["media"]["recovery"]
     text = str(out)
     assert "API_KEY" not in text and "_KEY" not in text and "env" not in text.lower()
+
+
+def test_category_profiles_are_consistent():
+    from launchlens.services import profiles
+    assert profiles.for_product({"category": "power wheelchair"}).key == "mobility"
+    assert profiles.for_product({"category": "portable speaker"}).key == "audio"
+    for p in profiles.PROFILES.values():
+        cats = {c for _, c, _, _ in p.osm} | {c for c, _ in p.qloo_tags.values()}
+        assert len(profiles.osm_tag_index(p)) == len(p.osm)  # every selector parses
+        for role, fit in p.role_fit.items():
+            assert set(fit) <= cats, (p.key, role, set(fit) - cats)
+        assert set(p.activation) <= cats
+        assert {ch for ch, _ in p.activation.values()} | {"digital_geo"} <= set(p.next_action)
+    from launchlens.services.creative import angle_text, feature_angle
+    assert feature_angle("fan") == "fan_comfort" and feature_angle("party_sync") == "lead_party_sync"
+    prod = {"features": [{"key": "party_sync", "name": "Party sync", "proposed_benefit": "link speakers", "enabled": True},
+                         {"key": "splash_resistant", "name": "Splash resistant", "proposed_benefit": "x", "enabled": True}]}
+    assert "Party sync" in angle_text("lead_party_sync", prod) and "Splash resistant" in angle_text("lead_party_sync", prod)
+
+
+def test_small_product_on_large_canvas_is_cut_out_and_failures_keep_the_photo():
+    import numpy as np
+    from PIL import Image, ImageDraw
+
+    from launchlens.services.compose import cutout
+    im = Image.new("RGB", (1000, 1000), (250, 250, 250))
+    ImageDraw.Draw(im).rounded_rectangle([430, 330, 570, 700], 30, fill=(20, 40, 110))  # ~5% of the canvas
+    out, info = cutout(im)
+    assert info["reliable"] and out.size[0] < 200 and out.size[1] < 400
+    assert np.array(out)[:, :, 3].max() == 255
+    noisy = Image.fromarray((np.random.default_rng(0).random((300, 300, 3)) * 255).astype("uint8"))
+    out2, info2 = cutout(noisy)
+    assert not info2["reliable"] and np.array(out2)[:, :, :3].mean() > 60  # never a blacked-out photo
+
+
+def test_overlong_strings_are_trimmed_only_as_last_resort():
+    from pydantic import BaseModel, Field, ValidationError
+
+    from launchlens.providers.llm import _trim_overlong
+
+    class M(BaseModel):
+        cta: str = Field(max_length=20)
+        n: int
+    bad = {"cta": "Discover the fun that lasts all summer", "n": 1}
+    try:
+        M.model_validate(bad)
+    except ValidationError as e:
+        fixed = _trim_overlong(bad, e)
+    assert fixed["cta"] == "Discover the fun" and M.model_validate(fixed)
+    try:
+        M.model_validate({"cta": "x" * 30, "n": "not a number"})
+    except ValidationError as e:
+        assert _trim_overlong({"cta": "x" * 30, "n": "not a number"}, e) is None  # other errors still fail

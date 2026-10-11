@@ -21,12 +21,15 @@ from ..db import session_scope
 from ..models import CreativeBrief, EvidenceRecord, GeographicArea, Storyboard, StoryboardScene, StrategyVersion
 from ..providers import llm
 from ..providers.base import ProviderError
+from . import profiles
 from . import claims as claimcheck
 from . import costs, hashing
 from .cache import stable_hash
 
 log = logging.getLogger("launchlens.creative")
-LANG_NAMES = {"en": "English", "hi": "Hindi", "bn": "Bengali"}
+LANG_NAMES = {"en": "English", "hi": "Hindi", "bn": "Bengali", "es": "Spanish"}
+MARKETS = {"IN": "India", "US": "the United States"}
+SARVAM_LANGS = ("hi", "bn")
 CHANNEL_ASPECTS = {"social": ["square", "portrait", "vertical"], "print": ["portrait"], "stories": ["vertical"]}
 
 
@@ -39,8 +42,8 @@ class Decision(BaseModel):
 
 class SceneDraft(BaseModel):
     purpose: str
-    shot_description: str = Field(description="Environment and motion only. Never depict the product, a wheelchair, "
-                                               "a mobility device, a fan, a microphone or any text.")
+    shot_description: str = Field(description="Environment and motion only. Never depict the product, anything "
+                                               "resembling it, devices or gadgets, or any text.")
     duration_s: int = Field(ge=3, le=8)
     spoken_copy: str
     on_screen_text: str
@@ -60,7 +63,7 @@ class BriefDraft(BaseModel):
     mood: str
     accessibility_requirements: list[str]
     background_prompt: str = Field(description="Prompt for a background scene with clear space for a product cut-out; "
-                                               "no product, no wheelchair, no mobility device, no text, no logos.")
+                                               "nothing resembling the product, no devices, no text, no logos.")
     decisions: list[Decision]
     scenes: list[SceneDraft] = Field(min_length=2, max_length=3)
 
@@ -90,7 +93,30 @@ def default_angle(role: str, main_feature: str) -> str:
         return "institutional_brief"
     if role == "distribution_partner":
         return "distributor_intro"
-    return "speech_presence" if main_feature == "speech_amplification" else "fan_comfort"
+    return feature_angle(main_feature)
+
+
+LEGACY_ANGLES = {"fan": "fan_comfort", "speech_amplification": "speech_presence"}
+
+
+def feature_angle(feature_key: str) -> str:
+    """The feature-emphasis angle for a feature (legacy names kept for the original sample)."""
+    return LEGACY_ANGLES.get(feature_key, f"lead_{feature_key}")
+
+
+def angle_text(angle: str | None, product: dict) -> str | None:
+    if angle is None or angle in ANGLES:
+        return ANGLES.get(angle) if angle else None
+    if angle.startswith("lead_"):
+        key = angle[5:]
+        feats = {f["key"]: f for f in product.get("features", [])}
+        f = feats.get(key)
+        if f:
+            others = ", ".join(x["name"] for k, x in feats.items() if k != key and x.get("enabled")) or "other features"
+            return (f"Feature-emphasis hypothesis: the headline, first message and CTA are about {f['name']} "
+                    f"({f.get('proposed_benefit') or f.get('mechanism') or ''}) ONLY. {others} may appear at most once, "
+                    "briefly, at the end of the body.")
+    return None
 
 
 def _price_text(product: dict, language: str) -> str:
@@ -112,7 +138,7 @@ def _template_brief(ctx: dict, sv: StrategyVersion, audience: dict, angle: str) 
         tone="warm, respectful, practical", setting=f"Everyday {area} streets and community spaces",
         visual_direction="Natural light, real places, generous negative space for the product", product_treatment="Real product photo composited, unaltered",
         mood="confident and calm", accessibility_requirements=["Text contrast ≥ 4.5:1", "Captions on all video", "Plain language"],
-        background_prompt=f"A sunlit, uncluttered public space in {area}, India, soft afternoon light, wide empty foreground for a product, photographic, no people in the foreground, no text",
+        background_prompt=f"A sunlit, uncluttered public space in {area}, {MARKETS.get(ctx['project'].get('country_code'), '')}, soft afternoon light, wide empty foreground for a product, photographic, no people in the foreground, no text",
         decisions=[Decision(decision=f"Lead with {main['name']}", rationale="From the strategy's main feature", evidence_ids=[], kind="creative_hypothesis")],
         scenes=[SceneDraft(purpose="Set the place", shot_description=f"Slow pan across a warm afternoon street in {area}", duration_s=5,
                            spoken_copy=f"Afternoons in {area} can be long and warm.", on_screen_text=f"Made for {area}"),
@@ -149,7 +175,7 @@ async def create_brief(ctx: dict, strategy_version_id: uuid.UUID, *, language: s
               "setting and CTA. Use only approved claims and enabled features. Do not invent certifications, tender "
               "eligibility, reimbursement, warranties, clinical benefits, numbers, or noise levels. Portray people "
               "with dignity and never as defined by a condition. Background and scene prompts must never depict the "
-              "product, a wheelchair, a mobility device, a fan, a microphone, any controls, text or logos: the real "
+              f"{profiles.for_product(product).avoid}, any controls, text or logos: the real "
               "product photo is composited later. Mark any style choice not backed by cited evidence as "
               "kind='creative_hypothesis'. Follow the CREATIVE ANGLE strictly: different angles must produce clearly "
               "different headlines, settings and calls to action. Describe features plainly; avoid quality adjectives "
@@ -165,7 +191,7 @@ LOCATION: {area.name}
 STRATEGY POSITIONING: {s_content.get('positioning')}
 MAIN FEATURE: {s_content.get('main_feature_key')} — {s_content.get('main_feature_rationale')}
 KEY MESSAGES: {s_content.get('key_messages')}
-CREATIVE ANGLE: {ANGLES.get(angle, angle)}
+CREATIVE ANGLE: {angle_text(angle, product) or angle}
 EVIDENCE (cite aliases in decisions.evidence_ids):
 {ev_lines or 'none'}
 CHANNEL: {channel}; OBJECTIVE: {objective}
@@ -205,7 +231,8 @@ Return the brief JSON with 3 scenes of 4–6 seconds each (total about 15 s befo
     if language != "en":
         try:
             content, scenes = await translate(content, scenes, language, usage,
-                                              protect=list({product["name"], re.sub(r"\s*\(.*?\)\s*", " ", product["name"]).strip()}))
+                                              protect=list({product["name"], re.sub(r"\s*\(.*?\)\s*", " ", product["name"]).strip()}),
+                                              market=MARKETS.get((ctx.get("project") or {}).get("country_code"), "the target market"))
             translation_status = "machine_translated_needs_review"
             if content.get("translation_chars"):
                 await costs.record(workspace_id=workspace_id, project_id=project_id, provider="sarvam",
@@ -269,17 +296,17 @@ async def _storyboard(s, b: CreativeBrief, scenes: list[dict], ctx: dict) -> Sto
 
 
 async def translate(content: dict, scenes: list[dict], language: str, usage: llm.Usage,
-                    protect: list[str] | None = None) -> tuple[dict, list[dict]]:
+                    protect: list[str] | None = None, market: str = "India") -> tuple[dict, list[dict]]:
     """Sarvam (Mayura) first for Hindi/Bengali, field by field with brand names
     protected; any field Sarvam cannot translate faithfully falls back to the
     reasoning model. Either way the result is marked as needing human review."""
     from ..providers import sarvam
-    if sarvam.configured():
+    if language in SARVAM_LANGS and sarvam.configured():
         try:
             return await _translate_sarvam(content, scenes, language, protect or [])
         except ProviderError as e:
             log.warning("Sarvam translation unavailable, using the reasoning model: %s", e.message)
-    return await _translate_llm(content, scenes, language, usage)
+    return await _translate_llm(content, scenes, language, usage, market=market)
 
 
 async def _translate_sarvam(content: dict, scenes: list[dict], language: str, protect: list[str]):
@@ -326,9 +353,10 @@ async def _translate_sarvam(content: dict, scenes: list[dict], language: str, pr
     return out, new_scenes
 
 
-async def _translate_llm(content: dict, scenes: list[dict], language: str, usage: llm.Usage) -> tuple[dict, list[dict]]:
+async def _translate_llm(content: dict, scenes: list[dict], language: str, usage: llm.Usage,
+                         market: str = "India") -> tuple[dict, list[dict]]:
     lang = LANG_NAMES[language]
-    system = (f"Translate advertising copy from English into natural, respectful {lang} for India. Keep meaning exact: "
+    system = (f"Translate advertising copy from English into natural, respectful {lang} for {market}. Keep meaning exact: "
               "do not add claims, numbers or promises. Keep brand and product names in Latin script. Also give an "
               "English back-translation of the headline for review.")
     user = f"""<data>

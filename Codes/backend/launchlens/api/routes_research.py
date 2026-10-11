@@ -305,8 +305,9 @@ async def run_analytics(run_id: uuid.UUID, area_id: uuid.UUID | None = None, cat
         if not any(la.area_id == aid for la in las):
             continue
         for f in feats:
-            hyp = next((e for e in evs if e.area_id == aid and e.topic == "feature_relevance" and f["key"] == "fan"), None)
-            if f["key"] == "fan" and hyp:
+            hyp = next((e for e in evs if e.area_id == aid and e.topic == "feature_relevance"
+                        and ((e.scope or {}).get("feature_key") or "fan") == f["key"]), None)
+            if hyp:
                 status, note, eid = "hypothesis", hyp.statement, str(hyp.id)
             elif f["key"] == "speech_amplification":
                 status, note, eid = "unknown", "No measured noise or intelligibility data; relevance cannot be validated.", None

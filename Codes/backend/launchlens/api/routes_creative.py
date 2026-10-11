@@ -23,7 +23,7 @@ from ..models import (
     Asset, CampaignResult, CreativeBrief, Export, Job, ProviderAttempt, Storyboard, StoryboardScene, StrategyVersion,
     UsageLedger,
 )
-from ..providers import geo, llm, qloo, voice, xai
+from ..providers import geo, llm, media, qloo, voice
 from ..security import Principal, current_principal, require_editor
 from ..services import costs, hashing, jobs, revisions
 from ..storage import storage
@@ -216,8 +216,8 @@ async def _gen_guard(p: Principal, s: AsyncSession, b: CreativeBrief):
     costly_limiter.check(str(p.user_id))
     if p.is_demo and not settings.DEMO_GENERATION_ENABLED:
         raise AppError(403, "demo_generation_disabled", "Generation is disabled in the public demo.")
-    if not xai.configured():
-        raise AppError(503, "xai_unavailable", "xAI is not configured (XAI_API_KEY / GROK_API_KEY missing in .env).")
+    if not media.configured():
+        raise AppError(503, "media_unavailable", "Image and video generation is not configured (no NanoGPT or xAI key).")
     if b.stale:
         raise AppError(409, "stale_brief", f"This brief is stale ({b.stale_reason}). Create a fresh brief first.")
     if any(any(i.get("severity") == "block" for i in v) for v in (b.content.get("claim_issues") or {}).values()):
@@ -231,13 +231,13 @@ async def estimate_generation(brief_id: uuid.UUID, presets: str = "square", mode
     """Cost estimate BEFORE queuing (upper bound: assumes nothing is reused)."""
     b = await owned(s, p, CreativeBrief, brief_id)
     n_img = len([x for x in presets.split(",") if x])
-    img, img_src = costs.estimate("xai", settings.XAI_IMAGE_MODEL, "image", n_img)
+    img, img_src = costs.estimate(media.primary(), media.image_model(), "image", n_img)
     sb = (await s.execute(select(Storyboard).where(Storyboard.brief_id == b.id).order_by(Storyboard.version.desc()).limit(1))).scalar_one_or_none()
     gen = [sc for sc in (sb.scenes if sb else []) if sc.kind == "generated" and (only_scene is None or sc.idx == only_scene)]
     secs = sum(int(sc.duration_s) for sc in gen)
-    frames, _ = costs.estimate("xai", settings.XAI_IMAGE_MODEL, "image", len(gen))
-    vid_list, vid_src = costs.estimate("xai", settings.XAI_VIDEO_MODEL, "second", secs) if mode == "full" else (Decimal(0), "")
-    vid_held = costs.reservation("xai", settings.XAI_VIDEO_MODEL, "second", secs) if mode == "full" else Decimal(0)
+    frames, _ = costs.estimate(media.primary(), media.image_model(), "image", len(gen))
+    vid_list, vid_src = costs.estimate(media.primary(), media.video_model(), "second", secs) if mode == "full" else (Decimal(0), "")
+    vid_held = costs.reservation(media.primary(), media.video_model(), "second", secs) if mode == "full" else Decimal(0)
     chars = sum(len(sc.spoken_copy or "") for sc in gen) if narration else 0
     def s_(v):
         return str(v) if v is not None else "unknown"
@@ -255,7 +255,7 @@ async def queue_images(brief_id: uuid.UUID, body: S.ImagesIn, p: Principal = Dep
                        s: AsyncSession = Depends(get_session)):
     b = await owned(s, p, CreativeBrief, brief_id)
     await _gen_guard(p, s, b)
-    est, src = costs.estimate("xai", settings.XAI_IMAGE_MODEL, "image", len(body.presets))
+    est, src = costs.estimate(media.primary(), media.image_model(), "image", len(body.presets))
     nonce = uuid.uuid4().hex[:8] if body.regenerate_background else ""
     focus = {k: v.model_dump() for k, v in body.crop_focus.items()}
     from ..services.cache import stable_hash
@@ -280,8 +280,8 @@ async def queue_video(brief_id: uuid.UUID, body: S.VideosIn, p: Principal = Depe
     if float(sb.total_seconds) > settings.MAX_VIDEO_SECONDS + 1:
         raise AppError(422, "too_long", f"Storyboard is {sb.total_seconds}s; the limit is {settings.MAX_VIDEO_SECONDS}s.")
     n_frames = sum(1 for sc in sb.scenes if sc.kind == "generated")
-    img_est, _ = costs.estimate("xai", settings.XAI_IMAGE_MODEL, "image", n_frames)
-    vid_est = costs.reservation("xai", settings.XAI_VIDEO_MODEL, "second", gen_seconds) if body.mode == "full" else Decimal(0)
+    img_est, _ = costs.estimate(media.primary(), media.image_model(), "image", n_frames)
+    vid_est = costs.reservation(media.primary(), media.video_model(), "second", gen_seconds) if body.mode == "full" else Decimal(0)
     src = "pricing file (list price x reserve_multiplier headroom)"
     nonce = uuid.uuid4().hex[:8] if body.regenerate else ""
     from ..services.cache import stable_hash
@@ -566,7 +566,7 @@ _status_cache: dict = {}
 async def providers_status(refresh: bool = False, p: Principal = Depends(current_principal)):
     if not refresh and _status_cache.get("at", 0) > time.time() - 300:
         return _status_cache["data"]
-    q, l_, x, g = await asyncio.gather(qloo.probe(), llm.probe(), xai.probe(), geo.probe(), return_exceptions=True)
+    q, l_, x, g = await asyncio.gather(qloo.probe(), llm.probe(), media.probe(), geo.probe(), return_exceptions=True)
 
     def safe(v):
         return {"error": str(v)[:200]} if isinstance(v, Exception) else v
@@ -639,7 +639,7 @@ async def ready():
         checks["storage"] = {"ok": True}
     except Exception as e:  # noqa: BLE001
         checks["storage"] = {"ok": False, "error": type(e).__name__}
-    checks["optional_providers"] = {"qloo": qloo.configured(), "xai": xai.configured(), "reasoning": llm.configured(),
+    checks["optional_providers"] = {"qloo": qloo.configured(), "media": media.configured(), "reasoning": llm.configured(),
                                     "narration": voice.configured()}
     ok = checks["database"]["ok"] and checks["ffmpeg"]["ok"] and checks["storage"]["ok"]
     return Response(content=__import__("json").dumps({"ready": ok, "checks": checks}), status_code=200 if ok else 503,

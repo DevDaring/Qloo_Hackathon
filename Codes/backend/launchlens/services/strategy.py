@@ -101,7 +101,8 @@ def _template(ctx: dict, g: dict, audience: dict) -> StrategyDraft:
     """Deterministic fallback when no reasoning provider is available."""
     feats = [f for f in ctx["product"]["features"] if f["enabled"]]
     hyp = next((e for e in g["evidence"] if e.topic == "feature_relevance"), None)
-    main = next((f for f in feats if f["key"] == "fan"), feats[0]) if hyp else feats[0]
+    hyp_key = ((hyp.scope or {}).get("feature_key") or "fan") if hyp else None
+    main = next((f for f in feats if f["key"] == hyp_key), feats[0]) if hyp else feats[0]
     pcs = [p for p in g["placements"] if p.channel_type != "digital_geo"][:4]
     digital = [p for p in g["placements"] if p.channel_type == "digital_geo"][:1]
     eid = [str(hyp.id)] if hyp else []

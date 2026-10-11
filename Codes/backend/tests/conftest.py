@@ -35,7 +35,7 @@ os.environ["DEMO_DAILY_COST_USD"] = "5"
 os.environ["JOB_LEASE_SECONDS"] = "30"
 # Offline tests never call real providers: blank the keys that are not monkeypatched per test.
 if os.environ.get("LAUNCHLENS_LIVE") != "1":
-    for _k in ("QLOO_API_KEY", "SARVAM_API_KEY"):
+    for _k in ("QLOO_API_KEY", "SARVAM_API_KEY", "NANOGPT_API_KEY", "NANOGPT_FALLBACK_API_KEY"):
         os.environ[_k] = ""
 
 import httpx  # noqa: E402
@@ -92,7 +92,7 @@ def fake_providers(monkeypatch):
     from launchlens.providers import geo, llm, xai
     from launchlens.providers.base import ProviderError
 
-    async def osm_places(lat, lon, radius_m):
+    async def osm_places(lat, lon, radius_m, profile=None):
         base = int(abs(lat * 10)) % 5
         items = []
         cats = [("pharmacy", "partner"), ("hospital", "institution"), ("community_centre", "venue"),

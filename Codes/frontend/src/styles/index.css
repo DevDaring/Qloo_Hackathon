@@ -51,6 +51,83 @@
   color-scheme: dark;
 }
 
+/* ------------------------------------------------------- dark wave backdrop */
+.wave-bg {
+  display: none;
+}
+.dark .wave-bg {
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background: #02040a;
+}
+.wave-bg__gradient {
+  position: absolute;
+  inset: -10%;
+  background: linear-gradient(125deg, #000000 0%, #030a1c 18%, #08245c 34%, #02050d 50%, #0a2f78 66%, #020611 82%, #000000 100%);
+  background-size: 300% 300%;
+  animation: ll-gradient-drift 28s ease-in-out infinite alternate;
+}
+.wave-bg__glow {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(60% 45% at 15% 10%, rgb(31 111 235 / 0.22), transparent 70%),
+    radial-gradient(50% 40% at 90% 85%, rgb(37 99 235 / 0.18), transparent 70%);
+  animation: ll-glow-breathe 14s ease-in-out infinite alternate;
+}
+.wave-bg__wave {
+  position: absolute;
+  left: 0;
+  width: 300%;
+  height: 34vh;
+  filter: blur(18px);
+  mix-blend-mode: screen;
+  will-change: transform;
+}
+.wave-bg__wave--1 {
+  top: 18%;
+  opacity: 0.32;
+  animation: ll-wave-pass 26s linear infinite;
+}
+.wave-bg__wave--2 {
+  top: 46%;
+  opacity: 0.22;
+  height: 42vh;
+  animation: ll-wave-pass 38s linear infinite reverse;
+}
+.wave-bg__wave--3 {
+  top: 70%;
+  opacity: 0.26;
+  animation: ll-wave-pass 32s linear infinite;
+  animation-delay: -12s;
+}
+.wave-bg__vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(120% 90% at 50% 40%, transparent 55%, rgb(0 0 0 / 0.7) 100%);
+}
+@keyframes ll-gradient-drift {
+  0% { background-position: 0% 30%; }
+  50% { background-position: 100% 60%; }
+  100% { background-position: 30% 100%; }
+}
+@keyframes ll-wave-pass {
+  from { transform: translate3d(0, 0, 0) scaleY(1); }
+  50% { transform: translate3d(-33.333%, -3vh, 0) scaleY(1.25); }
+  to { transform: translate3d(-66.666%, 0, 0) scaleY(1); }
+}
+@keyframes ll-glow-breathe {
+  from { opacity: 0.7; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wave-bg__gradient, .wave-bg__glow, .wave-bg__wave { animation: none; }
+}
+
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
@@ -59,6 +136,9 @@
   body {
     @apply bg-bg font-sans text-fg antialiased;
     font-feature-settings: 'cv11', 'ss01';
+  }
+  .dark body {
+    background: #02040a;
   }
   h1, h2, h3, h4 {
     @apply font-display tracking-tight;
@@ -78,6 +158,14 @@
 @layer components {
   .card {
     @apply rounded-2xl border border-line bg-surface shadow-card;
+  }
+  /* page canvas: solid in light, transparent in dark so the wave backdrop shows */
+  .page-canvas {
+    @apply bg-bg dark:bg-transparent;
+  }
+  .dark .card {
+    background-color: rgb(var(--surface) / 0.86);
+    border-color: rgb(96 140 230 / 0.16);
   }
   .card-hover {
     @apply transition-all duration-200 hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-lift;

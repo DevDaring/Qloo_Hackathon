@@ -25,7 +25,7 @@ export const ROLE_LABEL: Record<AudienceRole | string, string> = {
   distribution_partner: 'Distribution partner',
 };
 
-export const LANG_LABEL: Record<string, string> = { en: 'English', hi: 'हिन्दी Hindi', bn: 'বাংলা Bengali' };
+export const LANG_LABEL: Record<string, string> = { en: 'English', hi: 'हिन्दी Hindi', bn: 'বাংলা Bengali', es: 'Español Spanish' };
 
 export const PLACE_ROLE_LABEL: Record<string, string> = {
   competitor: 'Competitor',
@@ -131,3 +131,15 @@ export const PRESETS: { key: 'square' | 'portrait' | 'vertical'; label: string; 
 ];
 
 export const ANGLES = ['fan_comfort', 'speech_presence', 'institutional_brief', 'distributor_intro'] as const;
+
+const LEGACY_ANGLE: Record<string, string> = { fan: 'fan_comfort', speech_amplification: 'speech_presence' };
+
+/** Creative angles for a product: one feature-emphasis angle per enabled feature, plus the role briefs. */
+export function angleOptions(features: { key: string; name: string; enabled?: boolean }[] | undefined): { value: string; label: string }[] {
+  const feats = (features ?? []).filter((f) => f.enabled !== false);
+  return [
+    ...feats.map((f) => ({ value: LEGACY_ANGLE[f.key] ?? `lead_${f.key}`, label: `Lead with ${f.name}` })),
+    { value: 'institutional_brief', label: 'Institutional brief' },
+    { value: 'distributor_intro', label: 'Distributor introduction' },
+  ];
+}

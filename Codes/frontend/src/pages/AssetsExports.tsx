@@ -151,7 +151,7 @@ function AssetTile({ a, gallery, onDetails }: { a: Asset; gallery: Gallery; onDe
           <FileText className="m-auto h-10 w-10 text-subtle" />
         )}
         <span className="absolute left-1.5 top-1.5">{badges}</span>
-        {a.kind === 'video_animatic' && <Badge tone="warn" className="absolute bottom-2 left-2">Animatic — not xAI</Badge>}
+        {a.kind === 'video_animatic' && <Badge tone="warn" className="absolute bottom-2 left-2">Animatic — not generated video</Badge>}
       </button>
       {meta}
     </div>

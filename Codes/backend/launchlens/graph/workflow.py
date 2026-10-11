@@ -29,6 +29,7 @@ from ..db import session_scope
 from ..models import Export, LocationAssessment, ResearchRun
 from ..providers import qloo
 from ..services import context as ctxsvc
+from ..services import profiles
 from ..services import creative, events, exporter, production, research, strategy
 
 log = logging.getLogger("launchlens.graph")
@@ -182,7 +183,7 @@ async def taste_analyst(state: LaunchState, config) -> dict:
                                          state.get("qloo_enabled", True))
     results = await research.run_parallel(
         areas, lambda a: research.taste_analysis(run_id, pid, a, ctx["audiences"], budget, state.get("qloo_enabled", True),
-                                                 entities=entities),
+                                                 entities=entities, profile=profiles.for_product(ctx["product"])),
         min(2, settings.MAX_PROVIDER_CONCURRENCY))
     taste, errors = {}, []
     for a, r in zip(areas, results, strict=True):
@@ -225,7 +226,8 @@ async def placement_researcher(state: LaunchState, config) -> dict:
     n = 0
     for a in state["areas"]:
         if a.get("area_id") in eligible:
-            n += await research.placement_research(run_id, pid, a, ctx["audiences"], state.get("taste") or {})
+            n += await research.placement_research(run_id, pid, a, ctx["audiences"], state.get("taste") or {},
+                                                   profile=profiles.for_product(ctx["product"]))
     await research.set_run(run_id, counts={"placements": n})
     upd = await _stage(state, config, "placement_researcher", "completed", f"Qualified {n} placement candidates (all unverified)")
     return {**upd, "placements": {"count": n}}
@@ -289,12 +291,12 @@ async def creative_planner(state: LaunchState, config) -> dict:
             langs = req.get("languages") or [(aud or {}).get("languages", ["en"])[0] if aud and aud.get("languages") else "en"]
             angles = [None]
             if aud and aud["role"] in ("product_user", "purchaser") and req.get("both_feature_hypotheses", True):
+                enabled = [f["key"] for f in ctx["product"]["features"] if f["enabled"]]
                 main = sv.content.get("main_feature_key")
-                angles = [creative.default_angle(aud["role"], main),
-                          "speech_presence" if main != "speech_amplification" else "fan_comfort"]
-                enabled = {f["key"] for f in ctx["product"]["features"] if f["enabled"]}
-                angles = [a for a in angles if not ((a == "speech_presence" and "speech_amplification" not in enabled)
-                                                    or (a == "fan_comfort" and "fan" not in enabled))] or [None]
+                main = main if main in enabled else (enabled[0] if enabled else None)
+                other = next((k for k in enabled if k != main), None)
+                # two competing feature-emphasis hypotheses: the strategy's main feature, then the next enabled one
+                angles = [creative.feature_angle(k) for k in (main, other) if k] or [None]
             for lang in langs:
                 for angle in angles:
                     jc = _ctx(config)
@@ -311,10 +313,11 @@ async def creative_planner(state: LaunchState, config) -> dict:
 
 
 async def await_creative(state: LaunchState, config) -> dict:
+    from ..providers import media
     from ..services.costs import estimate
     n = len(state.get("brief_ids") or [])
-    img, _ = estimate("xai", settings.XAI_IMAGE_MODEL, "image", 1)
-    vid, src = estimate("xai", settings.XAI_VIDEO_MODEL, "second", 1)
+    img, _ = estimate(media.primary(), media.image_model(), "image", 1)
+    vid, src = estimate(media.primary(), media.video_model(), "second", 1)
     decision = interrupt({
         "type": "creative_scope", "title": "Review briefs, then choose what to generate and a spending cap",
         "brief_ids": state.get("brief_ids") or [],

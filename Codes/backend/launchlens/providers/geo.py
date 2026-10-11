@@ -89,33 +89,23 @@ async def geocode(query: str, country_codes: str = "", limit: int = 6) -> tuple[
 # OSM tag -> (app category, role, role_basis). Competitors here are only
 # INFERRED category peers (shops whose tags say they sell mobility/medical
 # supplies); a confirmed competitor needs the owner's confirmation.
-OSM_CATEGORIES: list[tuple[str, str, str, str]] = [
-    ('nwr["shop"="medical_supply"]', "medical_supply_store", "competitor", "inferred_category"),
-    ('nwr["shop"="mobility_scooter"]', "mobility_store", "competitor", "inferred_category"),
-    ('nwr["amenity"="pharmacy"]', "pharmacy", "partner", "inferred_category"),
-    ('nwr["healthcare"="physiotherapist"]', "physiotherapy", "partner", "inferred_category"),
-    ('nwr["amenity"="hospital"]', "hospital", "institution", "inferred_category"),
-    ('nwr["amenity"="clinic"]', "clinic", "institution", "inferred_category"),
-    ('nwr["amenity"="social_facility"]', "social_facility", "institution", "inferred_category"),
-    ('nwr["amenity"="community_centre"]', "community_centre", "venue", "inferred_category"),
-    ('nwr["shop"="mall"]', "shopping_mall", "venue", "inferred_category"),
-    ('nwr["shop"="electronics"]', "electronics_store", "partner", "inferred_category"),
-]
-_CAT_BY_TAG = {
-    ("shop", "medical_supply"): OSM_CATEGORIES[0], ("shop", "mobility_scooter"): OSM_CATEGORIES[1],
-    ("amenity", "pharmacy"): OSM_CATEGORIES[2], ("healthcare", "physiotherapist"): OSM_CATEGORIES[3],
-    ("amenity", "hospital"): OSM_CATEGORIES[4], ("amenity", "clinic"): OSM_CATEGORIES[5],
-    ("amenity", "social_facility"): OSM_CATEGORIES[6], ("amenity", "community_centre"): OSM_CATEGORIES[7],
-    ("shop", "mall"): OSM_CATEGORIES[8], ("shop", "electronics"): OSM_CATEGORIES[9],
-}
+# The categories come from the product's category profile (services/profiles.py);
+# the original power-wheelchair ("mobility") set remains the default.
+from ..services import profiles as _profiles  # noqa: E402
+
+OSM_CATEGORIES: list[tuple[str, str, str, str]] = _profiles.MOBILITY.osm
 MAX_PLACES_PER_AREA = 400
 
 
-async def osm_places(lat: float, lon: float, radius_m: int) -> tuple[list[dict], dict]:
+async def osm_places(lat: float, lon: float, radius_m: int, profile=None) -> tuple[list[dict], dict]:
+    profile = profile or _profiles.MOBILITY
+    by_tag = _profiles.osm_tag_index(profile)
     radius_m = int(min(max(radius_m, 500), 8000))
-    selectors = "".join(f"{sel}(around:{radius_m},{lat:.5f},{lon:.5f});" for sel, *_ in OSM_CATEGORIES)
+    selectors = "".join(f"{sel}(around:{radius_m},{lat:.5f},{lon:.5f});" for sel, *_ in profile.osm)
     ql = f"[out:json][timeout:60];({selectors});out center tags {MAX_PLACES_PER_AREA};"
     params = {"lat": round(lat, 5), "lon": round(lon, 5), "radius_m": radius_m, "v": 2}
+    if profile.key != "mobility":
+        params["profile"] = profile.key  # different categories, different cached response
     qh = cache.query_hash("osm-overpass", "/interpreter", params, version=settings.PLACES_BASE_URL)
     hit = await cache.get("osm-overpass", qh)
     if hit:
@@ -145,7 +135,7 @@ async def osm_places(lat: float, lon: float, radius_m: int) -> tuple[list[dict],
         plon = el.get("lon") or (el.get("center") or {}).get("lon")
         if plat is None or plon is None:
             continue
-        match = next((_CAT_BY_TAG[(k, tags[k])] for k in ("shop", "amenity", "healthcare") if (k, tags.get(k)) in _CAT_BY_TAG), None)
+        match = next((by_tag[(k, tags[k])] for k in ("shop", "amenity", "healthcare", "leisure") if (k, tags.get(k)) in by_tag), None)
         if not match:
             continue
         _, category, role, basis = match
@@ -194,11 +184,13 @@ async def climate_summary(lat: float, lon: float, years: tuple[int, int] = (2023
     by_month: dict[int, list[float]] = {m: [] for m in range(1, 13)}
     hot_days = 0
     hot_app_days = 0
+    outdoor_days = 0
     for d, t, a in zip(dates, tmax, app or [None] * len(dates), strict=False):
         if t is None:
             continue
         by_month[int(d[5:7])].append(float(t))
         hot_days += 1 if t >= 35.0 else 0
+        outdoor_days += 1 if 20.0 <= t <= 32.0 else 0
         hot_app_days += 1 if (a is not None and a >= 40.0) else 0
     n_years = years[1] - years[0] + 1
     monthly = {m: round(mean(v), 1) for m, v in by_month.items() if v}
@@ -206,6 +198,7 @@ async def climate_summary(lat: float, lon: float, years: tuple[int, int] = (2023
         "monthly_mean_daily_max_c": monthly,
         "hot_days_per_year_tmax_ge_35c": round(hot_days / n_years, 1),
         "days_per_year_apparent_ge_40c": round(hot_app_days / n_years, 1),
+        "outdoor_days_per_year_tmax_20_32c": round(outdoor_days / n_years, 1),
         "hottest_month_mean_max_c": max(monthly.values()) if monthly else None,
         "period": f"{years[0]}-01-01..{years[1]}-12-31", "units": "°C", "n_days": len(dates),
     }

@@ -21,7 +21,7 @@ test('Qloo explanation journey on the locked sample', async ({ page }) => {
   await login(page);
 
   // Projects: the sample card offers "Open sample" and "Duplicate to edit"
-  const card = page.getByTestId('sample-card');
+  const card = page.getByTestId('sample-card').filter({ hasText: 'IoT wheelchair launch' });
   await expect(card).toBeVisible();
   await expect(card.getByRole('button', { name: /Duplicate to edit/ })).toBeVisible();
   await card.getByRole('button', { name: /^Open sample/ }).click();

@@ -35,11 +35,11 @@ export function VideoPlayer({ asset, lang }: { asset: Asset; lang?: string }) {
       </div>
       <figcaption className="flex flex-wrap items-center gap-1.5 bg-surface px-3 py-2.5 text-xs">
         {native ? (
-          <Badge tone="violet" icon={<Film className="h-3 w-3" />}>xAI clips + assembly</Badge>
+          <Badge tone="violet" icon={<Film className="h-3 w-3" />}>Grok Imagine clips + assembly</Badge>
         ) : (
-          <Tooltip content="An animatic is a draft built from stills. It is NOT an xAI-generated video.">
+          <Tooltip content="An animatic is a draft built from stills. It is NOT a generated video.">
             <span tabIndex={0}>
-              <Badge tone="warn">Animatic draft — not xAI video</Badge>
+              <Badge tone="warn">Animatic draft — not generated video</Badge>
             </span>
           </Tooltip>
         )}

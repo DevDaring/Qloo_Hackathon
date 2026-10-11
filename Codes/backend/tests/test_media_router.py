@@ -1,0 +1,91 @@
+"""NanoGPT primary/fallback keys and the direct-xAI last resort (no network)."""
+from __future__ import annotations
+
+import base64
+from types import SimpleNamespace
+
+import pytest
+
+from launchlens.config import settings
+from launchlens.providers import media, nanogpt, xai
+from launchlens.providers.base import ProviderError
+
+PNG = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"0" * 32).decode()
+
+
+@pytest.fixture
+def keys(monkeypatch):
+    monkeypatch.setattr(settings, "NANOGPT_API_KEY", "sk-nano-primary")
+    monkeypatch.setattr(settings, "NANOGPT_FALLBACK_API_KEY", "sk-nano-fallback")
+    monkeypatch.setattr(settings, "MEDIA_PROVIDER", "nanogpt")
+    calls = []
+    return calls
+
+
+def fake_request(calls, rejected=(), fail_kind=None):
+    async def request(provider, method, url, *, headers=None, json=None, params=None, **kw):
+        key = headers["x-api-key"]
+        calls.append((url.rsplit("/", 1)[-1], key, json))
+        if key in rejected:
+            raise ProviderError("nanogpt", "auth", "credential rejected (HTTP 401)", status=401)
+        if fail_kind:
+            raise ProviderError("nanogpt", fail_kind, "refused", status=400)
+        if url.endswith("/video/status"):
+            return SimpleNamespace(json=lambda: {"data": {"status": "COMPLETED", "output": {"video": {"url": "https://v"}},
+                                                          "cost": 0.3}})
+        return SimpleNamespace(json=lambda: {"data": [{"b64_json": PNG}], "cost": 0.02})
+    return request
+
+
+async def test_primary_key_used_first(keys, monkeypatch):
+    monkeypatch.setattr(nanogpt, "request", fake_request(keys))
+    res = await media.generate_image("a street", aspect_ratio="9:16")
+    assert res["provider"] == "nanogpt" and res["key_slot"] == "primary" and str(res["cost_usd"]) == "0.020000"
+    assert [k for _, k, _ in keys] == ["sk-nano-primary"]
+    assert keys[0][2]["size"] == "9:16" and keys[0][2]["model"] == "grok-imagine-image"
+
+
+async def test_rejected_primary_falls_back_to_second_key(keys, monkeypatch):
+    monkeypatch.setattr(nanogpt, "request", fake_request(keys, rejected=("sk-nano-primary",)))
+    res = await media.generate_image("a street")
+    assert res["key_slot"] == "fallback" and [k for _, k, _ in keys] == ["sk-nano-primary", "sk-nano-fallback"]
+
+
+async def test_content_refusal_is_not_retried_elsewhere(keys, monkeypatch):
+    monkeypatch.setattr(nanogpt, "request", fake_request(keys, fail_kind="policy_refusal"))
+    monkeypatch.setattr(xai, "configured", lambda: True)
+    with pytest.raises(ProviderError) as e:
+        await media.generate_image("a street")
+    assert e.value.kind == "policy_refusal" and len(keys) == 1  # no second key, no xAI
+
+
+async def test_both_keys_rejected_uses_direct_xai_only_when_enabled(keys, monkeypatch):
+    monkeypatch.setattr(nanogpt, "request", fake_request(keys, rejected=("sk-nano-primary", "sk-nano-fallback")))
+    monkeypatch.setattr(xai, "configured", lambda: True)
+
+    async def xai_image(prompt, aspect_ratio="1:1", **kw):
+        return {"bytes": b"x", "mime": "image/png", "cost_usd": None, "model": "grok-imagine-image"}
+    monkeypatch.setattr(xai, "generate_image", xai_image)
+    assert (await media.generate_image("a street"))["provider"] == "xai"
+    monkeypatch.setattr(settings, "MEDIA_XAI_FALLBACK", False)
+    with pytest.raises(ProviderError) as e:
+        await media.generate_image("a street")
+    assert e.value.kind == "auth"
+
+
+async def test_video_ids_route_polling_to_their_provider(keys, monkeypatch):
+    monkeypatch.setattr(nanogpt, "request", fake_request(keys))
+
+    async def xai_poll(rid):
+        return {"state": "pending", "error": None, "who": "xai"}
+    monkeypatch.setattr(xai, "poll_video", xai_poll)
+    st = await media.poll_video("vid_abc123")
+    assert st["state"] == "done" and st["url"] == "https://v"
+    assert (await media.poll_video("0d6c1f3e-xai-uuid"))["who"] == "xai"
+
+
+def test_video_body_uses_nanogpt_fields():
+    b = nanogpt.video_body("pan", 20, "9:16", image_ref="data:image/jpeg;base64,AAAA")
+    assert b["duration"] == "15" and b["imageDataUrl"].startswith("data:") and "image" not in b
+    with pytest.raises(ProviderError):
+        nanogpt.video_body("pan", 5, "9:16", image_ref="https://remote/img.jpg")

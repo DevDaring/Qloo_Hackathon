@@ -490,7 +490,7 @@ function AudienceForm({ open, audience, onClose }: { open: boolean; audience: Au
         </Field>
         <Field label="Languages" className="sm:col-span-2" error={errs.languages}>
           <div className="flex flex-wrap gap-4">
-            {(['en', 'hi', 'bn'] as Lang[]).map((l) => (
+            {(['en', 'es', 'hi', 'bn'] as Lang[]).map((l) => (
               <Checkbox key={l} checked={langs.includes(l)} onChange={(v) => setLangs((x) => (v ? [...x, l] : x.filter((y) => y !== l)))} label={<span lang={l}>{LANG_LABEL[l]}</span>} />
             ))}
           </div>

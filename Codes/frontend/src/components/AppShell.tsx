@@ -94,7 +94,7 @@ function AppShell() {
   const online = useOnline();
   useEffect(() => setMobileOpen(false), [loc.pathname]);
   return (
-    <div className="flex min-h-screen bg-bg">
+    <div className="page-canvas flex min-h-screen">
       <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[200] focus:rounded-lg focus:bg-surface focus:px-3 focus:py-2 focus:shadow-lift">
         Skip to content
       </a>
@@ -252,7 +252,13 @@ function Sidebar() {
               {me?.workspace.name} {me?.workspace.is_demo && <Badge tone="brand" className="ml-1 !py-0 !text-[9.5px]">demo</Badge>}
             </span>
           </span>
-          <button onClick={toggle} className="rounded-lg p-1.5 text-muted hover:bg-surface2 hover:text-fg" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}>
+          <button
+            onClick={toggle}
+            aria-pressed={theme === 'dark'}
+            className="rounded-lg p-1.5 text-muted hover:bg-surface2 hover:text-fg"
+            aria-label={theme === 'dark' ? 'Dark theme on — switch to light' : 'Light theme on — switch to dark'}
+            title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+          >
             {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </button>
           <button

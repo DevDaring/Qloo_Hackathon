@@ -5,6 +5,7 @@ import { MotionConfig } from 'framer-motion';
 import { BrowserRouter } from 'react-router-dom';
 import { ApiError } from './api/client';
 import { App } from './App';
+import { WaveBackground } from './components/WaveBackground';
 import { ToastProvider } from './components/Toast';
 import './styles/index.css';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -28,6 +29,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <MotionConfig reducedMotion="user">
         <ToastProvider>
           <BrowserRouter>
+            <WaveBackground />
             <App />
           </BrowserRouter>
         </ToastProvider>

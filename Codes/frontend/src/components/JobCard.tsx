@@ -135,7 +135,7 @@ export function JobCard({ job, pid }: { job: Job; pid: string }) {
           </>
         }
       >
-        <p className="mb-3 text-sm text-muted">Check your xAI console for these request ids, then record what happened. Reservations are kept until each is resolved.</p>
+        <p className="mb-3 text-sm text-muted">Check the provider console (NanoGPT, or xAI if the fallback was used) for these request ids, then record what happened. Reservations are kept until each is resolved.</p>
         <ul className="space-y-2">
           {(reconcile ?? []).map((id) => {
             const a = attempts.find((x) => x.id === id);
@@ -176,7 +176,7 @@ export function JobCard({ job, pid }: { job: Job; pid: string }) {
         loading={cancel.isPending}
         onConfirm={() => cancel.mutate(undefined, { onSuccess: (r) => (toast.info('Cancellation requested', r.note), setConfirmCancel(false)), onError: (e) => toast.error('Could not cancel', e) })}
       >
-        No new paid calls will start. xAI has no cancel endpoint, so already-submitted requests may still be billed. Completed assets are kept.
+        No new paid calls will start. The video provider has no cancel endpoint, so already-submitted requests may still be billed. Completed assets are kept.
       </ConfirmDialog>
     </div>
   );

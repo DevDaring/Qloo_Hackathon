@@ -19,13 +19,14 @@ import uuid
 from pathlib import Path
 
 from PIL import Image
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from ..config import settings
 from ..db import session_scope
 from ..models import Asset, CreativeBrief, Job, ProductAsset, Storyboard, StoryboardScene
-from ..providers import llm, voice, xai
+from ..providers import llm, media, voice
+from . import profiles
 from ..providers.base import ProviderError
 from ..security import fetch_media
 from . import assets as assetsvc
@@ -46,7 +47,8 @@ SCENE_GUARD = (" Full-frame cinematic photograph filling the entire image edge t
                "devices, gadgets, signage, text, letters, logos or watermarks.")
 VIDEO_GUARD = (" Cinematic, gentle natural motion, realistic. Keep the scene exactly as in the reference frame: people stay "
                "on ordinary seats or keep walking; nothing new is added. No equipment, devices, signage, text or logos.")
-_RISKY = re.compile(r"wheel ?chair|mobility|scooter|walker|crutch|medical|device|product|fan\b|microphone|speaker", re.I)
+# Union of every category profile's risky nouns: a clause naming any of them is dropped.
+_RISKY = re.compile("|".join(p.risky_words for p in profiles.PROFILES.values()), re.I)
 
 
 def clean_prompt(text: str) -> str:
@@ -100,30 +102,30 @@ def _blocking_issues(brief: CreativeBrief) -> dict:
 async def paid_image(ctx: JobCtx, *, key: str, prompt: str, aspect: str, kind: str, project_id: uuid.UUID,
                      label: str, lineage: dict, reference: str | None = None, brief_id: uuid.UUID | None = None,
                      identity_hash: str = "", input_hash: str = "") -> Asset:
-    """One xAI image under the attempt ledger."""
+    """One generated image (NanoGPT, or direct xAI as fallback) under the attempt ledger."""
     prior = await jobs.find_attempt(key)
     if prior and prior.status == "succeeded" and prior.output_asset_ids:
         a = await assetsvc.get(uuid.UUID(prior.output_asset_ids[0]))
         if a:
             return a
     if prior and prior.status in ("submission_unknown", "prepared") and prior.job_id != ctx.job.id:
-        raise ProviderError("xai", "submission_unknown",
+        raise ProviderError(media.primary(), "submission_unknown",
                             "An earlier identical image request has an unknown outcome; reconcile before retrying.")
     if prior and prior.status == "submission_unknown":
-        raise ProviderError("xai", "submission_unknown", "This image request's outcome is unknown; retry deliberately.")
-    model = settings.XAI_IMAGE_MODEL
+        raise ProviderError(media.primary(), "submission_unknown", "This image request's outcome is unknown; retry deliberately.")
+    provider, model = media.primary(), media.image_model()
     ledger = await costs.reserve(workspace_id=ctx.job.workspace_id, project_id=project_id, job_id=ctx.job.id,
-                                 run_id=ctx.job.run_id, provider="xai", model=model, operation="image",
+                                 run_id=ctx.job.run_id, provider=provider, model=model, operation="image",
                                  category="image", quantity=1, unit="image", job_cap=ctx.job.cost_cap_usd)
-    attempt = await jobs.prepare_attempt(job=ctx.job, provider="xai", operation="image_edit" if reference else "image_generation",
+    attempt = await jobs.prepare_attempt(job=ctx.job, provider=provider, operation="image_edit" if reference else "image_generation",
                                          model=model, key=key, request_summary={"aspect_ratio": aspect, "prompt": prompt[:600]},
                                          reserved=ledger.estimated_usd)
     await ctx.beat(status="waiting_for_provider")
     try:
         if reference:
-            res = await xai.edit_image(prompt, reference, aspect_ratio=aspect, model=model)
+            res = await media.edit_image(prompt, reference, aspect_ratio=aspect)
         else:
-            res = await xai.generate_image(prompt, aspect_ratio=aspect, model=model)
+            res = await media.generate_image(prompt, aspect_ratio=aspect)
     except ProviderError as e:
         if e.kind == "submission_unknown":
             await jobs.update_attempt(attempt.id, status="submission_unknown", error=e.as_dict())
@@ -132,13 +134,15 @@ async def paid_image(ctx: JobCtx, *, key: str, prompt: str, aspect: str, kind: s
             await costs.release(ledger.id)
         raise
     a = await assetsvc.save(workspace_id=ctx.job.workspace_id, project_id=project_id, kind=kind, data=res["bytes"],
-                            mime=res["mime"], source="xai", label=label, provider_model=model, brief_id=brief_id,
+                            mime=res["mime"], source=res.get("provider", provider), label=label,
+                            provider_model=res.get("model") or model, brief_id=brief_id,
                             identity_hash=identity_hash, input_hash=input_hash, lineage=lineage,
                             metadata={"provider_aspect_ratio": aspect, "prompt": prompt[:1200],
                                       "native_size_note": "Provider output size; final presets are composed separately."})
     actual = res["cost_usd"]
     await jobs.update_attempt(attempt.id, status="succeeded", cost_actual_usd=actual, output_asset_ids=[str(a.id)],
-                              response_summary={"asset_id": str(a.id), "bytes": len(res["bytes"])})
+                              response_summary={"asset_id": str(a.id), "bytes": len(res["bytes"]),
+                                                "served_by": res.get("provider", provider), "key_slot": res.get("key_slot")})
     await costs.settle(ledger.id, actual_usd=actual, attempt_id=attempt.id)
     return a
 
@@ -194,7 +198,7 @@ async def produce_images(ctx: JobCtx, brief_id: uuid.UUID, presets: list[str], *
         await ctx.beat(status="running", stage=f"image:{preset}")
         aspect = compose.PRESETS[preset]["provider_aspect"]
         bg_input = stable_hash({"visual": brief.visual_hash, "prompt": c["background_prompt"], "aspect": aspect,
-                                "model": settings.XAI_IMAGE_MODEL, "nonce": nonce})
+                                "model": media.image_model(), "nonce": nonce})
         try:
             bg = None
             if reuse_background_from and reuse_background_from.get(preset):
@@ -215,7 +219,7 @@ async def produce_images(ctx: JobCtx, brief_id: uuid.UUID, presets: list[str], *
                 out["reused"].append({"preset": preset, "background_id": str(bg.id)})
             focus = (crop_focus or {}).get(preset) or {}
             flyer_input = stable_hash({"bg": str(bg.id), "copy": brief.copy_hash, "product": photo.sha256,
-                                       "logo": logo.sha256 if logo else None, "preset": preset, "accent": accent, "v": 4,
+                                       "logo": logo.sha256 if logo else None, "preset": preset, "accent": accent, "v": 5,
                                        **({"focus": focus} if focus else {})})
             existing = await assetsvc.find_by_input(ctx.job.workspace_id, "flyer", flyer_input)
             if existing:
@@ -275,11 +279,11 @@ def _jpeg_data_uri(data: bytes, max_side: int = 1024) -> str:
     im.thumbnail((max_side, max_side))
     buf = io.BytesIO()
     im.save(buf, "JPEG", quality=85)
-    return xai.data_uri(buf.getvalue(), "image/jpeg")
+    return media.data_uri(buf.getvalue(), "image/jpeg")
 
 
 async def _submit_scene(ctx: JobCtx, brief: CreativeBrief, scene: StoryboardScene, frame: Asset, nonce: str) -> dict:
-    model = settings.XAI_VIDEO_MODEL
+    provider, model = media.primary(), media.video_model()
     seconds = int(scene.duration_s)
     prompt = clean_prompt(f"{scene.shot_description}. {brief.content.get('setting', '')}. {brief.content.get('mood', '')}.") + VIDEO_GUARD
     key = f"vid:{stable_hash({'scene': scene.input_hash, 'frame': frame.sha256, 'model': model, 'nonce': nonce, 's': seconds})}"
@@ -292,15 +296,15 @@ async def _submit_scene(ctx: JobCtx, brief: CreativeBrief, scene: StoryboardScen
         if prior.status in ("submission_unknown", "prepared"):
             return {"scene": scene, "attempt": prior, "state": "submission_unknown"}
     ledger = await costs.reserve(workspace_id=ctx.job.workspace_id, project_id=brief.project_id, job_id=ctx.job.id,
-                                 run_id=ctx.job.run_id, provider="xai", model=model, operation="video", category="video",
+                                 run_id=ctx.job.run_id, provider=provider, model=model, operation="video", category="video",
                                  quantity=seconds, unit="second", job_cap=ctx.job.cost_cap_usd)
-    body = xai.video_body(prompt, seconds, "9:16", model=model, image_ref=_jpeg_data_uri(await assetsvc.load_bytes(frame)))
-    summary = {k: v for k, v in body.items() if k != "image"} | {"image": f"reference frame asset {frame.id}"}
-    attempt = await jobs.prepare_attempt(job=ctx.job, provider="xai", operation="video_generation", model=model, key=key,
+    frame_uri = _jpeg_data_uri(await assetsvc.load_bytes(frame))
+    summary = {"prompt": prompt[:600], "duration": seconds, "aspect_ratio": "9:16", "image": f"reference frame asset {frame.id}"}
+    attempt = await jobs.prepare_attempt(job=ctx.job, provider=provider, operation="video_generation", model=model, key=key,
                                          request_summary=summary, reserved=ledger.estimated_usd)
     await ctx.beat(status="waiting_for_provider")
     try:
-        rid = await xai.start_video(body)
+        rid, served_by, _m = await media.start_video(prompt, seconds, "9:16", image_ref=frame_uri)
     except ProviderError as e:
         if e.kind == "submission_unknown":
             await jobs.update_attempt(attempt.id, status="submission_unknown", error=e.as_dict())
@@ -310,10 +314,11 @@ async def _submit_scene(ctx: JobCtx, brief: CreativeBrief, scene: StoryboardScen
         return {"scene": scene, "attempt": attempt, "state": "failed" if e.kind != "submission_unknown" else "submission_unknown",
                 "error": e.as_dict()}
     await jobs.update_attempt(attempt.id, status="submitted", remote_request_id=rid,
-                              response_summary={"ledger_id": str(ledger.id)})
+                              response_summary={"ledger_id": str(ledger.id), "served_by": served_by})
     attempt.remote_request_id, attempt.status = rid, "submitted"
-    attempt.response_summary = {"ledger_id": str(ledger.id)}
-    await ctx.emit(f"Scene {scene.idx + 1} submitted to xAI (request {rid[:8]}…)", stage="video")
+    attempt.response_summary = {"ledger_id": str(ledger.id), "served_by": served_by}
+    label = "NanoGPT" if served_by == "nanogpt" else "xAI"
+    await ctx.emit(f"Scene {scene.idx + 1} submitted to {label} (request {rid[:12]}…)", stage="video")
     return {"scene": scene, "attempt": attempt, "state": "pending"}
 
 
@@ -324,7 +329,7 @@ async def _poll_all(ctx: JobCtx, brief: CreativeBrief, pending: list[dict]) -> N
         if asyncio.get_running_loop().time() > deadline:
             for p in pending:
                 if p["state"] == "pending":
-                    p["state"], p["error"] = "failed", {"kind": "failed", "message": "xAI did not finish before the deadline"}
+                    p["state"], p["error"] = "failed", {"kind": "failed", "message": "The video provider did not finish before the deadline"}
                     await jobs.update_attempt(p["attempt"].id, status="failed", error=p["error"])
             break
         await ctx.beat(status="waiting_for_provider",
@@ -332,7 +337,7 @@ async def _poll_all(ctx: JobCtx, brief: CreativeBrief, pending: list[dict]) -> N
         for p in pending:
             if p["state"] != "pending":
                 continue
-            st = await xai.poll_video(p["attempt"].remote_request_id)
+            st = await media.poll_video(p["attempt"].remote_request_id)
             if st["state"] == "pending":
                 continue
             ledger_id = (p["attempt"].response_summary or {}).get("ledger_id")
@@ -344,8 +349,9 @@ async def _poll_all(ctx: JobCtx, brief: CreativeBrief, pending: list[dict]) -> N
                     info = await videosvc.probe(Path(f.name))
                 clip = await assetsvc.save(
                     workspace_id=ctx.job.workspace_id, project_id=brief.project_id, kind="video_clip", data=data,
-                    mime="video/mp4", source="xai", label=f"xAI clip · scene {p['scene'].idx + 1}",
-                    provider_model=st.get("model") or settings.XAI_VIDEO_MODEL, remote_request_id=p["attempt"].remote_request_id,
+                    mime="video/mp4", source=(p["attempt"].response_summary or {}).get("served_by") or p["attempt"].provider,
+                    label=f"Generated clip · scene {p['scene'].idx + 1}",
+                    provider_model=st.get("model") or p["attempt"].model, remote_request_id=p["attempt"].remote_request_id,
                     brief_id=brief.id, identity_hash=brief.identity_hash, duration_s=info["duration"],
                     width=info["width"], height=info["height"], input_hash=p["attempt"].idempotency_key.split(":", 1)[-1][:64],
                     lineage={"scene_id": str(p["scene"].id), "brief_id": str(brief.id)}, metadata={"probe": info})
@@ -570,7 +576,8 @@ async def produce_video(ctx: JobCtx, brief_id: uuid.UUID, *, orientations: list[
 
 # ---------------------------------------------------------------- review -----
 class _BgReview(BaseModel):
-    contains_wheelchair_or_mobility_device: bool
+    contains_product_like_object: bool = Field(description="Any wheelchair, mobility device, speaker, headphones, "
+                                                           "phone or other product-like object")
     contains_fan_microphone_or_gadget: bool
     contains_readable_text_or_logo: bool
     people_portrayed_with_dignity: bool

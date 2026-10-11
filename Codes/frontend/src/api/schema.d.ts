@@ -1430,7 +1430,7 @@ export interface components {
             /** Voluntary Interests */
             voluntary_interests?: components["schemas"]["Interest"][];
             /** Languages */
-            languages?: ("en" | "hi" | "bn")[];
+            languages?: ("en" | "hi" | "bn" | "es")[];
             /**
              * Research Notes
              * @default
@@ -1471,7 +1471,7 @@ export interface components {
              * @default en
              * @enum {string}
              */
-            language: "en" | "hi" | "bn";
+            language: "en" | "hi" | "bn" | "es";
             /**
              * Channel
              * @default social
@@ -1484,7 +1484,7 @@ export interface components {
              */
             objective: string;
             /** Angle */
-            angle?: ("fan_comfort" | "speech_presence" | "institutional_brief" | "distributor_intro") | null;
+            angle?: string | null;
         };
         /** BriefPatch */
         BriefPatch: {
@@ -1599,9 +1599,9 @@ export interface components {
              */
             strategy_version_id: string;
             /** Language */
-            language?: ("en" | "hi" | "bn") | null;
+            language?: ("en" | "hi" | "bn" | "es") | null;
             /** Angle */
-            angle?: ("fan_comfort" | "speech_presence" | "institutional_brief" | "distributor_intro") | null;
+            angle?: string | null;
         };
         /** EntityResolveIn */
         EntityResolveIn: {

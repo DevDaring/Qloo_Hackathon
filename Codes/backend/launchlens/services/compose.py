@@ -243,12 +243,16 @@ def cutout(product: Image.Image) -> tuple[Image.Image, dict]:
             mask[list(ys), list(xs)] = True
     shadow_alpha = np.clip((diff.astype(np.float32) - 18) / 50, 0, 1) * 120
     alpha = np.where(mask, shadow_alpha, 255).astype(np.uint8)
+    removed = float((alpha < 8).mean())
+    # A small product on a large studio canvas legitimately removes most pixels; what matters is that a
+    # solid foreground remains (at least 1% of the image). Too little removed means no real background.
+    if removed < 0.05 or (1 - removed) < 0.01:
+        # return the untouched photo: the layout frames it as a card
+        return product.convert("RGBA"), {"method": "none", "reliable": False,
+                                         "reason": f"separation implausible ({removed:.0%} removed)"}
     # floor-shadow pixels become a neutral dark shadow (not a pale patch)
     a[mask, :3] = 0
     im = Image.fromarray(a)
-    removed = float((alpha < 8).mean())
-    if removed < 0.05 or removed > 0.9:
-        return im, {"method": "none", "reliable": False, "reason": f"separation implausible ({removed:.0%} removed)"}
     alpha_img = Image.fromarray(alpha).filter(ImageFilter.GaussianBlur(1.0))
     im.putalpha(alpha_img)
     bbox = im.getbbox()

@@ -103,7 +103,7 @@ async def speak(text: str, language: str) -> tuple[bytes, str]:
         steps.append(("fal", lambda: _fal(text)))
     if language.startswith("en"):
         steps.reverse()
-    elif sarvam.configured():
+    elif language in ("hi", "bn") and sarvam.configured():
         # Indian languages lead with Sarvam Bulbul (native Hindi/Bengali voices).
         steps.insert(0, ("sarvam", lambda: sarvam.tts(text, language)))
     if settings.TTS_PROVIDER in ("fish", "fal", "sarvam"):

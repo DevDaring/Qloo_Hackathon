@@ -30,20 +30,21 @@ import { Reveal, RevealLi, useReveal } from '../components/Reveal';
 import { Logo } from '../components/Logo';
 import { EVIDENCE_BADGES } from '../lib/labels';
 import { cn } from '../lib/format';
+import { ThemeToggle } from '../components/ThemeToggle';
 
 const STEPS = [
   { icon: Package, title: 'Describe product', body: 'Structured facts, features, prohibited exaggerations and open questions — versioned.' },
   { icon: MapPinned, title: 'Discover places', body: 'Candidate cities, retrieved businesses, climate evidence and hard service constraints.' },
   { icon: Users, title: 'Understand audiences', body: 'Users, purchasers, institutions and partners — with Qloo taste signals where available.' },
   { icon: Store, title: 'Pick placements', body: 'Partners, venues and digital options, each with verification still to do.' },
-  { icon: Film, title: 'Generate flyers & video', body: 'xAI imagery, deterministic typography, real MP4s with captions — within your cap.' },
+  { icon: Film, title: 'Generate flyers & video', body: 'Grok Imagine imagery via NanoGPT, deterministic typography, real MP4s with captions — within your cap.' },
   { icon: Download, title: 'Export with evidence', body: 'A campaign package with strategy, evidence summary, assets and a manifest.' },
 ];
 
 const POWERED = [
   { icon: Fingerprint, name: 'Qloo Taste AI' },
   { icon: Brain, name: 'OpenAI' },
-  { icon: Sparkles, name: 'xAI Grok Imagine' },
+  { icon: Sparkles, name: 'Grok Imagine via NanoGPT' },
   { icon: Globe2, name: 'OpenStreetMap' },
   { icon: CloudSun, name: 'Open-Meteo' },
   { icon: Workflow, name: 'LangGraph' },
@@ -53,7 +54,7 @@ const BADGE_ORDER = ['Supported', 'Owner-provided', 'Provider signal', 'Derived'
 
 export default function Landing() {
   return (
-    <div className="relative min-h-screen overflow-x-hidden bg-[#FBFBFD] text-fg dark:bg-bg">
+    <div className="relative min-h-screen overflow-x-hidden bg-[#FBFBFD] text-fg dark:bg-transparent">
       <TopNav />
       <Hero />
       <HowItWorks />
@@ -77,7 +78,7 @@ function TopNav() {
     <header
       className={cn(
         'fixed inset-x-0 top-0 z-50 border-b backdrop-blur-xl transition-colors duration-300',
-        overHero ? 'border-white/10 bg-[#060A14]/40' : 'border-line bg-[#FBFBFD]/85 dark:bg-bg/80',
+        overHero ? 'border-white/10 bg-[#060A14]/40' : 'border-line bg-[#FBFBFD]/85 dark:border-white/10 dark:bg-[#02040a]/70',
       )}
     >
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
@@ -89,6 +90,8 @@ function TopNav() {
           <a href="#evidence" className={overHero ? 'hover:text-white' : 'hover:text-fg'}>Evidence model</a>
           <a href="#powered" className={overHero ? 'hover:text-white' : 'hover:text-fg'}>Powered by</a>
         </nav>
+        <div className="flex items-center gap-2.5">
+        <ThemeToggle onDark={overHero} />
         <Link
           to="/login"
           className={cn(
@@ -98,6 +101,7 @@ function TopNav() {
         >
           Sign in <ArrowRight className="h-3.5 w-3.5" />
         </Link>
+        </div>
       </div>
     </header>
   );

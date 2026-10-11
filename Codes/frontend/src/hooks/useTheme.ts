@@ -1,27 +1,55 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 
 export type Theme = 'light' | 'dark';
 
-function read(): Theme {
+/* One shared theme for the whole app: every toggle (landing, login, sidebar) stays in sync.
+   Default follows the system setting until the user picks one; the choice is remembered. */
+function stored(): Theme | null {
   try {
-    return localStorage.getItem('ll-theme') === 'dark' ? 'dark' : 'light';
+    const t = localStorage.getItem('ll-theme');
+    return t === 'dark' || t === 'light' ? t : null;
   } catch {
-    return 'light';
+    return null;
   }
+}
+function system(): Theme {
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+let current: Theme = typeof document !== 'undefined' && document.documentElement.classList.contains('dark') ? 'dark' : stored() ?? system();
+const listeners = new Set<() => void>();
+function apply(t: Theme) {
+  current = t;
+  document.documentElement.classList.toggle('dark', t === 'dark');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', t === 'dark' ? '#03060F' : '#F7F8FB');
+  listeners.forEach((l) => l());
+}
+if (typeof window !== 'undefined') {
+  apply(current);
+  window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', (e) => {
+    if (!stored()) apply(e.matches ? 'dark' : 'light');
+  });
+}
+
+export function setTheme(t: Theme) {
+  try {
+    localStorage.setItem('ll-theme', t);
+  } catch {
+    /* storage unavailable: still switch for this visit */
+  }
+  apply(t);
 }
 
 export function useTheme() {
-  const [theme, setTheme] = useState<Theme>(read);
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', theme === 'dark');
-    try {
-      localStorage.setItem('ll-theme', theme);
-    } catch {
-      /* storage unavailable */
-    }
-  }, [theme]);
-  const toggle = useCallback(() => setTheme((t) => (t === 'dark' ? 'light' : 'dark')), []);
-  return { theme, toggle };
+  const theme = useSyncExternalStore(
+    (cb) => {
+      listeners.add(cb);
+      return () => listeners.delete(cb);
+    },
+    () => current,
+    () => current,
+  );
+  const toggle = useCallback(() => setTheme(current === 'dark' ? 'light' : 'dark'), []);
+  return { theme, toggle, setTheme };
 }
 
 export function useOnline() {
