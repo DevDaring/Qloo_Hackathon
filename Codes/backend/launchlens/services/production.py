@@ -441,6 +441,8 @@ async def produce_video(ctx: JobCtx, brief_id: uuid.UUID, *, orientations: list[
                                                    "Edit the scene description and regenerate."}})
                 return
             frames[sc.idx] = frame
+            await ctx.emit(f"Scene {sc.idx + 1} reference frame ready", stage="video", asset_id=str(frame.id),
+                           scene=sc.idx, state="frame_ready")
         except ProviderError as e:
             result["failed"].append({"scene": sc.idx, "stage": "reference_frame", "error": e.as_dict()})
             if e.kind in ("auth", "not_configured", "submission_unknown") or e.status == 402:

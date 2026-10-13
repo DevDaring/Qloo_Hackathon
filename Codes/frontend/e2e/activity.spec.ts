@@ -75,3 +75,57 @@ test('generation progress, notifications and the activity indicator', async ({ p
   await toast.getByTestId('toast-action').click();
   await expect(page).toHaveURL(/\/studio$/);
 });
+
+test('a finished video clip plays right in its progress tile', async ({ page }) => {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('ll-guide-done', '1');
+    } catch {
+      /* ignore */
+    }
+  });
+  await page.goto('/login');
+  await page.getByRole('button', { name: 'Use jury login' }).click();
+  await expect(page).toHaveURL(/\/projects$/);
+  const us = await page.evaluate(async () => (await (await fetch('/api/v1/projects')).json()).items.find((p: { is_demo: boolean; country_code: string }) => p.is_demo && p.country_code === 'US').id as string);
+  // a real clip from the sample, so the tile really plays footage
+  const clipId = await page.evaluate(async (pid) => {
+    const items = (await (await fetch(`/api/v1/projects/${pid}/assets?kind=video_clip`)).json()).items as { id: string }[];
+    return items[0]?.id ?? null;
+  }, us);
+  test.skip(!clipId, 'the sample has no clip to show');
+  const JOB = '00000000-0000-4000-8000-0000000000bb';
+  const started = new Date(Date.now() - 60_000).toISOString();
+  await page.route('**/api/v1/creative-briefs/*', async (route) => {
+    if (route.request().method() !== 'GET' || /estimate|trace/.test(route.request().url())) return route.continue().catch(() => undefined);
+    const res = await route.fetch().catch(() => null);
+    if (!res) return;
+    const body = await res.json();
+    body.jobs = [{ id: JOB, kind: 'video', status: 'running', attempts: 1, max_attempts: 2, progress: { stage: 'video' }, result: {}, error: null, project_id: us, run_id: null, cost_cap_usd: 2, created_at: started, updated_at: started, finished_at: null, heartbeat_at: started }, ...body.jobs];
+    await route.fulfill({ response: res, json: body });
+  });
+  await page.route('**/api/v1/projects/*/event-stream*', (r) => r.abort());
+  await page.route('**/api/v1/projects/*/events*', async (route) => {
+    const res = await route.fetch().catch(() => null);
+    if (!res) return;
+    const body = await res.json();
+    const ev = (id: number, message: string, data: Record<string, unknown> = {}) => ({ id, type: 'job.progress', stage: 'video', message, data, run_id: null, job_id: JOB, created_at: new Date().toISOString() });
+    const after = Number(new URL(route.request().url()).searchParams.get('after') ?? 0);
+    if (after < 9_100_001) body.items.push(ev(9_100_001, 'Scene 1 submitted to xAI (request abc…)', { scene: 0, state: 'rendering' }));
+    if (after < 9_100_002) body.items.push(ev(9_100_002, 'Scene 1 clip downloaded', { scene: 0, state: 'clip_ready', asset_id: clipId }));
+    body.last_id = Math.max(body.last_id ?? 0, ...body.items.map((e: { id: number }) => e.id));
+    await route.fulfill({ response: res, json: body }).catch(() => undefined);
+  });
+  await page.goto(`/projects/${us}/studio`);
+  const gp = page.getByTestId('generation-progress');
+  await expect(gp).toBeVisible();
+  const tile = gp.getByTestId('clip-preview').first();
+  await expect(tile).toBeVisible({ timeout: 15_000 });
+  await expect(tile.locator('video')).toHaveAttribute('src', new RegExp(`/api/v1/assets/${clipId}/download`));
+  await expect.poll(() => tile.locator('video').evaluate((v: HTMLVideoElement) => v.readyState)).toBeGreaterThan(0);
+  await tile.click();
+  const viewer = page.getByRole('dialog', { name: /Scene 1/ });
+  await expect(viewer.locator('video[controls]')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(viewer).toHaveCount(0);
+});

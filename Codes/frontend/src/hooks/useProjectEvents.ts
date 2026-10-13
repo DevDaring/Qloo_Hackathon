@@ -42,6 +42,8 @@ export function useProjectEvents(pid?: string) {
           pending.current.add('jobs');
           if (/completed|failed|partially|cancelled|waiting_for_user/.test(t)) pending.current.add('creative');
           if (e.job_id) qc.invalidateQueries({ queryKey: ['job', e.job_id] });
+          // a frame, clip or flyer just landed: refresh the brief so its preview appears straight away
+          if (e.data && (e.data as { asset_id?: string }).asset_id) pending.current.add('creative');
         }
       }
       if (flushTimer.current) return;

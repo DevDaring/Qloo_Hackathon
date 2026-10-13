@@ -43,8 +43,12 @@ interface Item {
   label: string;
   state: ItemState;
   thumb?: string;
+  /** a finished clip or video, played muted in the tile so there is always something to watch */
+  clip?: string;
   note?: string;
 }
+
+const dl = (id: string) => `/api/v1/assets/${id}/download`;
 
 function imageItems(job: Job, evs: RunEvent[]): Item[] {
   const plan = recallPlan(job.id);
@@ -73,8 +77,25 @@ function imageItems(job: Job, evs: RunEvent[]): Item[] {
   return Array.from(items.values());
 }
 
-function videoItems(job: Job, evs: RunEvent[], scenes: number): Item[] {
-  const items: Item[] = Array.from({ length: Math.max(scenes, 1) }, (_, i) => ({ key: `s${i + 1}`, label: `Scene ${i + 1}`, state: 'queued' as ItemState }));
+function videoItems(job: Job, evs: RunEvent[], b: BriefDetail): Item[] {
+  const scenes = (b.storyboard?.scenes ?? []).filter((s) => s.kind !== 'end_card');
+  const items: Item[] = Array.from({ length: Math.max(scenes.length, 1) }, (_, i) => ({ key: `s${i + 1}`, label: `Scene ${i + 1}`, state: 'queued' as ItemState }));
+  // what this job has already produced (also after a reload): frames and clips saved on the brief since it started
+  const since = new Date(job.created_at).getTime() - 5000;
+  const fresh = b.assets.filter((a) => new Date(a.created_at).getTime() >= since);
+  scenes.forEach((sc, i) => {
+    const mine = (k: string) => fresh.find((a) => a.kind === k && (a.lineage as { scene_id?: string } | null)?.scene_id === sc.id);
+    const frame = mine('scene_frame');
+    const clip = mine('video_clip');
+    if (frame) {
+      items[i].thumb = dl(frame.id);
+      items[i].state = 'rendering';
+    }
+    if (clip) {
+      items[i].clip = dl(clip.id);
+      items[i].state = 'downloaded';
+    }
+  });
   const finals = new Map<string, Item>();
   for (const e of evs) {
     const m = e.message;
@@ -87,15 +108,19 @@ function videoItems(job: Job, evs: RunEvent[], scenes: number): Item[] {
         it.state = 'reviewing';
         it.note = 'Frame failed an automatic check — regenerating once';
       } else if (/frame/i.test(m) && e.data?.asset_id) {
-        it.thumb = `/api/v1/assets/${e.data.asset_id}/download`;
+        it.thumb = dl(String(e.data.asset_id));
         if (it.state === 'queued') it.state = 'generating';
-      } else if (/submitted/i.test(m)) it.state = 'rendering';
-      else if (/downloaded/i.test(m)) it.state = 'downloaded';
+      } else if (/submitted/i.test(m)) {
+        if (it.state !== 'downloaded') it.state = 'rendering';
+      } else if (/downloaded/i.test(m)) {
+        it.state = 'downloaded';
+        if (e.data?.asset_id) it.clip = dl(String(e.data.asset_id));
+      }
       else if (/fail/i.test(m)) it.state = 'failed';
       continue;
     }
     const fm = /Final video \((\w+)\) assembled/i.exec(m);
-    if (fm) finals.set(fm[1], { key: `f-${fm[1]}`, label: `Final ${fm[1]} video`, state: 'done' });
+    if (fm) finals.set(fm[1], { key: `f-${fm[1]}`, label: `Final ${fm[1]} video`, state: 'done', clip: e.data?.asset_id ? dl(String(e.data.asset_id)) : undefined });
     else if (/assembl/i.test(m)) finals.set('any', { key: 'f-any', label: 'Final video', state: 'assembling' });
   }
   const plan = recallPlan(job.id);
@@ -128,19 +153,19 @@ export function GenerationProgress({ b }: { b: BriefDetail }) {
   return (
     <AnimatePresence>
       {active.map((j) => (
-        <JobView key={j.id} job={j} events={events.filter((e) => e.job_id === j.id)} scenes={b.storyboard?.scenes.length ?? 0} />
+        <JobView key={j.id} job={j} events={events.filter((e) => e.job_id === j.id)} b={b} />
       ))}
     </AnimatePresence>
   );
 }
 
-function JobView({ job, events, scenes }: { job: Job; events: RunEvent[]; scenes: number }) {
+function JobView({ job, events, b }: { job: Job; events: RunEvent[]; b: BriefDetail }) {
   const { pid, setConsoleOpen } = useProjectCtx();
   const toast = useToast();
   const [confirm, setConfirm] = useState(false);
   const cancel = useApiMutation(() => mutations.cancelJob(job.id), [['brief'], ['jobs', pid]]);
   const video = /video/.test(job.kind);
-  const items = useMemo(() => (video ? videoItems(job, events, scenes) : imageItems(job, events)), [video, job, events, scenes]);
+  const items = useMemo(() => (video ? videoItems(job, events, b) : imageItems(job, events)), [video, job, events, b]);
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const t = window.setInterval(() => setNow(Date.now()), 1000);
@@ -190,7 +215,9 @@ function JobView({ job, events, scenes }: { job: Job; events: RunEvent[]; scenes
         {items.map((it) => (
           <li key={it.key} className="rounded-2xl border border-line bg-surface p-2.5" data-state={it.state}>
             <div className={cn('relative flex items-center justify-center overflow-hidden rounded-xl bg-surface2', video ? 'aspect-video' : 'aspect-square')}>
-              {it.thumb ? (
+              {it.clip ? (
+                <ClipPreview src={it.clip} poster={it.thumb} label={it.label} />
+              ) : it.thumb ? (
                 <motion.img initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} src={it.thumb} alt={`${it.label} preview`} className="h-full w-full object-cover" />
               ) : it.state === 'queued' ? (
                 <Circle className="h-4 w-4 text-line" aria-hidden />
@@ -237,5 +264,31 @@ function StateChip({ s }: { s: ItemState }) {
       {done ? <Check className="h-2.5 w-2.5" aria-hidden /> : s === 'reviewing' ? <RefreshCw className="h-2.5 w-2.5 animate-spin motion-reduce:animate-none" aria-hidden /> : busy ? <Loader2 className="h-2.5 w-2.5 animate-spin motion-reduce:animate-none" aria-hidden /> : null}
       {STATE_LABEL[s]}
     </span>
+  );
+}
+
+/** A finished clip plays muted on a loop right in its tile; click to watch with sound and controls. */
+function ClipPreview({ src, poster, label }: { src: string; poster?: string; label: string }) {
+  const [full, setFull] = useState(false);
+  useEffect(() => {
+    if (!full) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setFull(false);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [full]);
+  return (
+    <>
+      <button type="button" onClick={() => setFull(true)} className="group/clip absolute inset-0" aria-label={`Play ${label}`} data-testid="clip-preview">
+        <video src={src} poster={poster} muted loop autoPlay playsInline preload="metadata" className="h-full w-full object-cover" />
+        <span className="absolute bottom-1.5 right-1.5 rounded-full bg-black/60 px-2 py-0.5 text-[10.5px] font-semibold text-white opacity-90 group-hover/clip:opacity-100">
+          ▶ Play
+        </span>
+      </button>
+      {full && (
+        <div role="dialog" aria-modal="true" aria-label={label} className="fixed inset-0 z-[120] flex items-center justify-center bg-black/80 p-4" onClick={() => setFull(false)}>
+          <video src={src} poster={poster} controls autoPlay playsInline className="max-h-[85vh] max-w-[90vw] rounded-xl shadow-lift" onClick={(e) => e.stopPropagation()} />
+        </div>
+      )}
+    </>
   );
 }
